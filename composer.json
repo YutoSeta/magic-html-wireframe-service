@@ -1,15 +1,14 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "yutoseta/magic-html-content-service",
+    "name": "yutoseta/magic-html-wireframe-service",
     "type": "project",
-    "description": "Contract-first content and immutable snapshot service for Magic HTML static sites.",
-    "keywords": ["laravel", "content", "static-site"],
+    "description": "Stateless Site AST to semantic wireframe AST generation service for Magic HTML.",
+    "keywords": ["laravel", "wireframe", "vocabulary-ast"],
     "license": "MIT",
     "require": {
         "php": "^8.3",
         "laravel/framework": "^13.17",
         "laravel/tinker": "^3.0",
-        "opis/json-schema": "^2.6",
         "yutoseta/magic-html-contracts": "^1.2"
     },
     "require-dev": {

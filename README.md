@@ -1,22 +1,24 @@
-# Magic HTML Content Service
+# Magic HTML Wireframe Service
 
-Tier 1 singleton-content capability for Magic HTML static sites. It owns site-scoped content drafts and immutable published snapshots. It does not expose collection, form, or media operations.
+A stateless Tier 0 generator that converts Site AST plus a structured brief into a semantic Vocabulary AST. It has no application database and can be tested or replaced without affecting stored sites.
 
-## Contract
+The output describes page sections by stable keys, composition types, and semantic roles. It never generates copy, HTML, CSS, selectors, colors, dimensions, or asset URLs.
 
-- `GET /api` — capability document
-- `GET /api/__verify` — runtime readiness
-- `PUT /api/v1/sites/{site}/contents/{resource}` — create or replace a content draft
-- `POST /api/v1/sites/{site}/snapshots` — publish an immutable content snapshot
-- `GET /api/v1/sites/{site}/snapshots/{version}` — retrieve a snapshot
-- `GET /api/v1/sites/{site}/published/contents/{resource}` — public runtime projection
+## API
 
-Writes and snapshot reads require the service Bearer token. Published content reads are public and CORS-enabled. Every record is scoped by `site`.
+`POST /api/v1/wireframes` requires `Authorization: Bearer <MAGIC_HTML_SERVICE_TOKEN>` and accepts:
 
-Each draft owns its JSON Schema and is rejected when its value does not satisfy it. `media_refs` are stable references to the independent Media Service; this service never calls an object store.
+- `site_ast` — canonical site information architecture
+- `brief` — normalized interview fields
+- `locale` — output locale
+
+Every Site AST page appears exactly once in `wireframe_ast`. Each page contains 2–8 sections and uses the finite composition and role vocabularies enforced by the validator.
+
+## Verification
 
 ```bash
 composer install
-php artisan migrate
 php artisan test --compact
+composer validate --strict
+composer audit --no-dev
 ```

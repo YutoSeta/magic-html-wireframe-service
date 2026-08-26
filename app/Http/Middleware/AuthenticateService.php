@@ -16,7 +16,7 @@ final class AuthenticateService
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $expected = (string) config('content.service_token', '');
+        $expected = (string) config('wireframe.service_token', '');
         $provided = (string) $request->bearerToken();
         if ($expected === '' || $provided === '' || ! hash_equals($expected, $provided)) {
             return Problem::response($request, 401, 'unauthorized', 'A valid bearer token is required.');

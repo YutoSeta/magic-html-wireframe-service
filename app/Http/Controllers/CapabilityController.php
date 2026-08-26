@@ -6,7 +6,6 @@ use App\Http\Resources\CapabilityResource;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\Schema;
 
 final class CapabilityController extends Controller
 {
@@ -22,13 +21,13 @@ final class CapabilityController extends Controller
     {
         $checks = [
             'contract_installed' => is_file(base_path('vendor/yutoseta/magic-html-contracts/openapi/tier1.json')),
-            'database' => Schema::hasTable('cms_resources') && Schema::hasTable('snapshots'),
+            'generator' => (string) config('services.openai.key') !== '',
         ];
         $ready = ! in_array(false, $checks, true);
 
         return response()->json([
-            'service' => 'magic-html-content-service',
-            'tier' => 1,
+            'service' => 'magic-html-wireframe-service',
+            'tier' => 0,
             'status' => $ready ? 'ok' : 'degraded',
             'contract_version' => '1.0',
             'checks' => $checks,

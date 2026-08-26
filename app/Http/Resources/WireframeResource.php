@@ -5,7 +5,7 @@ namespace App\Http\Resources;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-final class SnapshotResource extends JsonResource
+final class WireframeResource extends JsonResource
 {
     /**
      * Transform the resource into an array.
@@ -16,11 +16,7 @@ final class SnapshotResource extends JsonResource
     {
         return [
             'contract_version' => '1.0',
-            'site_id' => $this->site_id,
-            'version' => $this->version,
-            'published_at' => $this->published_at->toIso8601String(),
-            'digest' => $this->digest,
-            'contents' => $this->document['contents'],
+            'wireframe_ast' => $this->resource,
         ];
     }
 }

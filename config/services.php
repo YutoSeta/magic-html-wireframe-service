@@ -2,6 +2,14 @@
 
 return [
 
+    'openai' => [
+        'key' => env('OPENAI_API_KEY'),
+        'url' => env('OPENAI_RESPONSES_URL', 'https://api.openai.com/v1/responses'),
+        'model' => env('OPENAI_MODEL', 'gpt-5.6-sol'),
+        'reasoning_effort' => env('OPENAI_REASONING_EFFORT', 'medium'),
+        'timeout' => (int) env('OPENAI_TIMEOUT', 300),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Third Party Services
