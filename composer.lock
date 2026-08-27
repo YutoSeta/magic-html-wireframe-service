@@ -6034,16 +6034,16 @@
         },
         {
             "name": "yutoseta/laravel-admin",
-            "version": "v0.1.1",
+            "version": "v0.1.2",
             "source": {
                 "type": "git",
                 "url": "git@github.com:YutoSeta/magic-html-laravel-admin.git",
-                "reference": "f137104bf0da3d43cdc0bf959a8877cfa8e581c3"
+                "reference": "fd71314924b110846f096f003c4bb787a96cbd43"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/YutoSeta/magic-html-laravel-admin/zipball/f137104bf0da3d43cdc0bf959a8877cfa8e581c3",
-                "reference": "f137104bf0da3d43cdc0bf959a8877cfa8e581c3",
+                "url": "https://api.github.com/repos/YutoSeta/magic-html-laravel-admin/zipball/fd71314924b110846f096f003c4bb787a96cbd43",
+                "reference": "fd71314924b110846f096f003c4bb787a96cbd43",
                 "shasum": ""
             },
             "require": {
@@ -6087,10 +6087,10 @@
             ],
             "description": "Composable Laravel administration primitives and orchestration contracts for tenant access, typed settings, encrypted secrets, and revision publishing.",
             "support": {
-                "source": "https://github.com/YutoSeta/magic-html-laravel-admin/tree/v0.1.1",
+                "source": "https://github.com/YutoSeta/magic-html-laravel-admin/tree/v0.1.2",
                 "issues": "https://github.com/YutoSeta/magic-html-laravel-admin/issues"
             },
-            "time": "2026-08-27T08:29:37+00:00"
+            "time": "2026-08-27T08:53:10+00:00"
         },
         {
             "name": "yutoseta/magic-html-contracts",
