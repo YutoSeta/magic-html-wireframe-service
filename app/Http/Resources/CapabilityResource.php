@@ -23,6 +23,16 @@ final class CapabilityResource extends JsonResource
             'operations' => [
                 'POST /api/v1/wireframes',
             ],
+            'write_safety' => [
+                'idempotency_key' => [
+                    'header' => 'Idempotency-Key',
+                    'min_length' => 8,
+                    'max_length' => 200,
+                    'exact_request_bytes' => true,
+                    'replay_header' => 'Idempotent-Replayed',
+                ],
+                'stored_input' => 'sha256_only',
+            ],
         ];
     }
 }
