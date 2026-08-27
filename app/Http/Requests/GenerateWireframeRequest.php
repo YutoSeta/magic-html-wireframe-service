@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use Illuminate\Contracts\Validation\Validator;
+use Illuminate\Support\Str;
 
 final class GenerateWireframeRequest extends ContractRequest
 {
@@ -35,7 +36,20 @@ final class GenerateWireframeRequest extends ContractRequest
                     $validator->errors()->add('site_ast', 'The Site AST must be a JSON object.');
                 }
             },
+            function (Validator $validator): void {
+                $idempotencyKey = $this->header('Idempotency-Key');
+                if (! is_string($idempotencyKey)
+                    || Str::length($idempotencyKey) < 8
+                    || Str::length($idempotencyKey) > 200) {
+                    $validator->errors()->add('Idempotency-Key', 'The Idempotency-Key header must be between 8 and 200 characters.');
+                }
+            },
         ];
+    }
+
+    public function idempotencyKey(): string
+    {
+        return (string) $this->header('Idempotency-Key');
     }
 
     protected function prepareForValidation(): void

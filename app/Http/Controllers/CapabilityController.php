@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Resources\CapabilityResource;
+use Illuminate\Cache\CacheManager;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -17,11 +18,21 @@ final class CapabilityController extends Controller
         return new CapabilityResource([]);
     }
 
-    public function verify(): JsonResponse
+    public function verify(CacheManager $cache): JsonResponse
     {
+        $store = config('wireframe.idempotency.store');
+        try {
+            $cache->store(is_string($store) && $store !== '' ? $store : null)
+                ->get('wireframe-idempotency-readiness');
+            $idempotencyStore = true;
+        } catch (\Throwable) {
+            $idempotencyStore = false;
+        }
+
         $checks = [
             'contract_installed' => is_file(base_path('vendor/yutoseta/magic-html-contracts/openapi/tier1.json')),
             'generator' => (string) config('services.openai.key') !== '',
+            'idempotency_store' => $idempotencyStore,
         ];
         $ready = ! in_array(false, $checks, true);
 
