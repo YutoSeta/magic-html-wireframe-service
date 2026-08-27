@@ -33,5 +33,9 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <env name="LARAVEL_ADMIN_TRANSPORT_ENABLED" value="true"/>
+        <env name="LARAVEL_ADMIN_TRANSPORT_AUTH" value="token"/>
+        <env name="LARAVEL_ADMIN_TRANSPORT_TOKEN" value="test-admin-token"/>
+        <env name="LARAVEL_ADMIN_REGISTER_BUILT_IN_OPERATIONS" value="false"/>
     </php>
 </phpunit>
