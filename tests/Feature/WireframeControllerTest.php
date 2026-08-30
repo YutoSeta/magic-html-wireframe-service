@@ -68,6 +68,36 @@ final class WireframeControllerTest extends TestCase
         $this->assertSame(1, $generator->calls);
     }
 
+    public function test_legacy_raw_wireframe_records_remain_replayable_without_telemetry(): void
+    {
+        $generator = $this->bindGenerator();
+        $idempotencyKey = 'wireframe-legacy-replay-0001';
+        $payload = $this->payload();
+        $requestBytes = json_encode($payload, JSON_THROW_ON_ERROR);
+        $keyHash = hash('sha256', $idempotencyKey);
+        Cache::forever("wireframe-idempotency:{$keyHash}", [
+            'version' => 1,
+            'operation' => 'wireframes.generate',
+            'request_hash' => hash('sha256', "wireframes\0{$payload['contract_version']}\0{$requestBytes}"),
+            'state' => 'completed',
+            'response' => $this->wireframe($payload['site_ast']),
+        ]);
+        $server = [
+            'HTTP_AUTHORIZATION' => 'Bearer test-token',
+            'HTTP_IDEMPOTENCY_KEY' => $idempotencyKey,
+            'HTTP_ACCEPT' => 'application/json',
+            'CONTENT_TYPE' => 'application/json',
+        ];
+
+        $response = $this->call('POST', '/api/v1/wireframes', [], [], [], $server, $requestBytes);
+
+        $response->assertOk()
+            ->assertHeader('Idempotent-Replayed', 'true')
+            ->assertJsonMissingPath('telemetry')
+            ->assertJsonPath('wireframe_ast.pages.0.key', 'home');
+        $this->assertSame(0, $generator->calls);
+    }
+
     public function test_database_store_replays_the_response_across_requests(): void
     {
         config()->set('wireframe.idempotency.store', 'database');

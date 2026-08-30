@@ -41,7 +41,12 @@ final class WireframeController extends Controller
             return Problem::response($request, 502, 'wireframe_provider_failed', $exception->getMessage());
         }
 
-        return (new WireframeResource($result['wireframe']))->response()->withHeaders([
+        $resource = new WireframeResource($result['wireframe']);
+        if ($result['telemetry'] !== null) {
+            $resource->additional(['telemetry' => $result['telemetry']]);
+        }
+
+        return $resource->response()->withHeaders([
             'Idempotent-Replayed' => $result['replayed'] ? 'true' : 'false',
             'Cache-Control' => 'private, no-store',
         ]);

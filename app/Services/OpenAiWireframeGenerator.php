@@ -3,24 +3,43 @@
 namespace App\Services;
 
 use App\Exceptions\InvalidWireframeException;
+use App\Services\Contracts\ReportsWireframeTelemetry;
 use App\Services\Contracts\WireframeGenerator;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
-final class OpenAiWireframeGenerator implements WireframeGenerator
+final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, WireframeGenerator
 {
+    /**
+     * @var array<string,mixed>|null
+     */
+    private ?array $telemetry = null;
+
     public function __construct(private readonly WireframeValidator $validator) {}
 
     /** @param array<string,mixed> $siteAst @param array<string,mixed> $brief @return array<string,mixed> */
     public function generate(array $siteAst, array $brief, string $locale): array
     {
+        $this->telemetry = null;
+        $providerTelemetry = new OpenAiTelemetry((array) config('services.openai.rate_card', []));
         $feedback = null;
         for ($attempt = 0; $attempt < 2; $attempt++) {
-            $response = Http::withToken((string) config('services.openai.key'))
+            $providerTelemetry->beginSemanticAttempt();
+            $request = Http::withToken((string) config('services.openai.key'))
                 ->acceptJson()
                 ->timeout((int) config('services.openai.timeout', 300))
-                ->retry([1000, 3000, 7000], throw: false)
-                ->post((string) config('services.openai.url'), [
+                ->connectTimeout((int) config('services.openai.connect_timeout', 10))
+                ->beforeSending(function () use ($providerTelemetry): void {
+                    $providerTelemetry->recordProviderRequest();
+                });
+            $retryDelays = $this->retryDelays();
+            if ($retryDelays !== []) {
+                $request->retry($retryDelays, throw: false);
+            }
+
+            $startedAt = hrtime(true);
+            try {
+                $response = $request->post((string) config('services.openai.url'), [
                     'model' => (string) config('services.openai.model'),
                     'instructions' => 'You are a semantic wireframe architect. Preserve every Site AST page key exactly once. Each page has 2 to 8 unique sections. Describe information hierarchy only. Do not write copy, HTML, CSS, colors, dimensions, selectors, or asset URLs.',
                     'input' => json_encode([
@@ -40,10 +59,15 @@ final class OpenAiWireframeGenerator implements WireframeGenerator
                     'store' => false,
                     'metadata' => ['stage' => 'wireframes'],
                 ]);
+            } finally {
+                $providerTelemetry->recordProviderDuration(hrtime(true) - $startedAt);
+            }
 
             if (! $response->successful()) {
                 throw new RuntimeException('The wireframe provider rejected the request.');
             }
+            $providerResponse = $response->json();
+            $providerTelemetry->recordResponse(is_array($providerResponse) ? $providerResponse : []);
             $text = $response->json('output_text');
             if (! is_string($text)) {
                 $text = $this->outputText((array) $response->json('output', []));
@@ -54,13 +78,22 @@ final class OpenAiWireframeGenerator implements WireframeGenerator
             }
 
             try {
-                return $this->validator->validate($document, $siteAst);
+                $wireframe = $this->validator->validate($document, $siteAst);
+                $this->telemetry = $providerTelemetry->toArray();
+
+                return $wireframe;
             } catch (InvalidWireframeException $exception) {
                 $feedback = $exception->getMessage();
             }
         }
 
         throw new InvalidWireframeException('No valid wireframe was produced. '.($feedback ?? ''));
+    }
+
+    /** @return array<string,mixed>|null */
+    public function telemetry(): ?array
+    {
+        return $this->telemetry;
     }
 
     /** @return array<string,mixed> */
@@ -95,5 +128,16 @@ final class OpenAiWireframeGenerator implements WireframeGenerator
         }
 
         return '';
+    }
+
+    /** @return list<int> */
+    private function retryDelays(): array
+    {
+        $delays = config('services.openai.retry_delays_ms', []);
+        if (! is_array($delays)) {
+            return [];
+        }
+
+        return array_values(array_filter($delays, fn (mixed $delay): bool => is_int($delay) && $delay >= 0 && $delay <= 60_000));
     }
 }
