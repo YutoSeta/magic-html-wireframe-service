@@ -1,0 +1,161 @@
+<?php
+
+namespace Tests\Feature;
+
+use Illuminate\Support\Facades\Http;
+use Tests\TestCase;
+
+final class MaterializeWireframeControllerTest extends TestCase
+{
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config()->set('wireframe.service_token', 'test-token');
+    }
+
+    public function test_materializes_a_canonical_self_contained_neutral_html_file_set_without_a_provider(): void
+    {
+        Http::preventStrayRequests();
+        $payload = $this->payload();
+
+        $first = $this->withToken('test-token')
+            ->postJson('/api/v1/wireframes/materialize', $payload);
+        $payload['wireframe_ast'] = [
+            'pages' => $payload['wireframe_ast']['pages'],
+            'version' => $payload['wireframe_ast']['version'],
+        ];
+        $second = $this->withToken('test-token')
+            ->postJson('/api/v1/wireframes/materialize', $payload);
+
+        $first->assertOk()
+            ->assertHeader('Cache-Control', 'no-store, private')
+            ->assertJsonPath('contract_version', '1.0')
+            ->assertJsonPath('entry_path', 'page-home-scriptalert1script.html')
+            ->assertJsonPath('telemetry.operation', 'wireframes.materialize')
+            ->assertJsonPath('telemetry.renderer', 'neutral-layout-html')
+            ->assertJsonPath('telemetry.provider', 'deterministic')
+            ->assertJsonPath('telemetry.model', null)
+            ->assertJsonPath('telemetry.response_id', null)
+            ->assertJsonPath('telemetry.input_tokens', 0)
+            ->assertJsonPath('telemetry.cached_input_tokens', 0)
+            ->assertJsonPath('telemetry.output_tokens', 0)
+            ->assertJsonPath('telemetry.reasoning_tokens', 0)
+            ->assertJsonPath('telemetry.estimated_cost', null)
+            ->assertJsonPath('telemetry.provider_request_count', 0)
+            ->assertJsonPath('telemetry.semantic_attempt_count', 0)
+            ->assertJsonPath('telemetry.retry_count', 0)
+            ->assertJsonPath('telemetry.provider_duration_ms', 0)
+            ->assertJsonPath('telemetry.rate_card', null)
+            ->assertJsonCount(2, 'files')
+            ->assertJsonCount(2, 'file_manifest');
+
+        $sourceDigest = $first->json('source_digest');
+        $files = $first->json('files');
+        $manifest = $first->json('file_manifest');
+        foreach ($files as $index => $file) {
+            $this->assertSame(['path', 'mime', 'content_base64'], array_keys($file));
+            $this->assertSame(['page_key', 'path', 'size', 'sha256'], array_keys($manifest[$index]));
+            $this->assertSame($file['path'], $manifest[$index]['path']);
+            $content = base64_decode($file['content_base64'], true);
+            $this->assertIsString($content);
+            $this->assertSame(strlen($content), $manifest[$index]['size']);
+            $this->assertSame(hash('sha256', $content), $manifest[$index]['sha256']);
+        }
+        $html = base64_decode($files[0]['content_base64'], true);
+        $this->assertIsString($html);
+        $this->assertMatchesRegularExpression('/\A[a-f0-9]{64}\z/D', $sourceDigest);
+        $this->assertStringStartsWith("<!doctype html>\n", $html);
+        $this->assertStringContainsString('Content-Security-Policy', $html);
+        $this->assertStringContainsString('default-src \'none\'', $html);
+        $this->assertStringContainsString('Home &lt;script&gt;alert(1)&lt;/script&gt;', $html);
+        $this->assertStringNotContainsString('Home <script>alert(1)</script>', $html);
+        $this->assertStringNotContainsString('<script', $html);
+        $this->assertStringNotContainsString('<link', $html);
+        $this->assertStringNotContainsString('<img', $html);
+        $this->assertStringNotContainsString('src=', $html);
+        $this->assertStringNotContainsString('href=', $html);
+        $this->assertStringNotContainsString('url(', $html);
+        $this->assertStringNotContainsString('animation', $html);
+        $this->assertStringNotContainsString('transition', $html);
+        $this->assertStringNotContainsString('box-shadow', $html);
+        $this->assertStringNotContainsString('border-radius', $html);
+        $this->assertIsInt($first->json('telemetry.render_duration_ms'));
+        $this->assertGreaterThanOrEqual(0, $first->json('telemetry.render_duration_ms'));
+        $this->assertSame($first->json('source_digest'), $second->json('source_digest'));
+        $this->assertSame($first->json('files'), $second->json('files'));
+        $this->assertSame($first->json('file_manifest'), $second->json('file_manifest'));
+        Http::assertNothingSent();
+    }
+
+    public function test_requires_service_authentication(): void
+    {
+        $this->postJson('/api/v1/wireframes/materialize', $this->payload())
+            ->assertUnauthorized();
+    }
+
+    public function test_returns_422_for_duplicate_section_keys(): void
+    {
+        $payload = $this->payload();
+        $payload['wireframe_ast']['pages'][0]['sections'][1]['key'] = 'hero';
+
+        $this->withToken('test-token')
+            ->postJson('/api/v1/wireframes/materialize', $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('type', 'invalid_wireframe');
+    }
+
+    public function test_assigns_unique_preview_paths_when_page_keys_have_the_same_slug(): void
+    {
+        $payload = $this->payload();
+        $payload['wireframe_ast']['pages'][0]['key'] = 'Home';
+        $payload['wireframe_ast']['pages'][1]['key'] = 'home';
+
+        $response = $this->withToken('test-token')
+            ->postJson('/api/v1/wireframes/materialize', $payload)
+            ->assertOk()
+            ->assertJsonPath('entry_path', 'page-home.html');
+
+        $paths = array_column($response->json('files'), 'path');
+        $this->assertCount(2, array_unique(array_map(strtolower(...), $paths)));
+        $this->assertMatchesRegularExpression('/\Apage-home-[a-f0-9]{12}\.html\z/D', $paths[1]);
+    }
+
+    public function test_rejects_fields_outside_the_materialize_contract(): void
+    {
+        $payload = $this->payload();
+        $payload['wireframe_ast']['theme'] = ['remote_css' => 'https://example.test/theme.css'];
+
+        $this->withToken('test-token')
+            ->postJson('/api/v1/wireframes/materialize', $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('type', 'validation_failed')
+            ->assertJsonValidationErrors('wireframe_ast');
+    }
+
+    /** @return array<string,mixed> */
+    private function payload(): array
+    {
+        return [
+            'contract_version' => '1.0',
+            'wireframe_ast' => [
+                'version' => 1,
+                'pages' => [
+                    [
+                        'key' => 'Home <script>alert(1)</script>',
+                        'sections' => [
+                            ['key' => 'hero', 'composition' => 'hero', 'roles' => ['Eyebrow', 'Title', 'Text', 'Actions', 'Image']],
+                            ['key' => 'features', 'composition' => 'feature-grid', 'roles' => ['Title', 'Items']],
+                        ],
+                    ],
+                    [
+                        'key' => 'contact',
+                        'sections' => [
+                            ['key' => 'contact', 'composition' => 'contact', 'roles' => ['Title', 'Text', 'Actions']],
+                            ['key' => 'faq', 'composition' => 'faq', 'roles' => ['Title', 'Items']],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+    }
+}

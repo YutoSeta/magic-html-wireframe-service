@@ -22,6 +22,7 @@ final class CapabilityResource extends JsonResource
             'health' => url('/up'),
             'operations' => [
                 'POST /api/v1/wireframes',
+                'POST /api/v1/wireframes/materialize',
             ],
             'write_safety' => [
                 'idempotency_key' => [

@@ -8,6 +8,26 @@ return [
         'model' => env('OPENAI_MODEL', 'gpt-5.6-sol'),
         'reasoning_effort' => env('OPENAI_REASONING_EFFORT', 'medium'),
         'timeout' => (int) env('OPENAI_TIMEOUT', 300),
+        'connect_timeout' => (int) env('OPENAI_CONNECT_TIMEOUT', 10),
+        'retry_delays_ms' => [1000, 3000, 7000],
+        'rate_card' => [
+            'version' => env('OPENAI_RATE_CARD_VERSION', '2026-08-31'),
+            'effective_at' => env('OPENAI_RATE_CARD_EFFECTIVE_AT', '2026-08-31'),
+            'source' => env('OPENAI_RATE_CARD_SOURCE', 'https://developers.openai.com/api/docs/models/gpt-5.6-sol'),
+            'currency' => env('OPENAI_RATE_CARD_CURRENCY', 'USD'),
+            'models' => [
+                'gpt-5.6-sol' => [
+                    'aliases' => ['gpt-5.6'],
+                    'snapshot_prefixes' => ['gpt-5.6-sol-'],
+                    'input_per_million' => (float) env('OPENAI_GPT_5_6_SOL_INPUT_PER_MILLION', 4),
+                    'cached_input_per_million' => (float) env('OPENAI_GPT_5_6_SOL_CACHED_INPUT_PER_MILLION', 0.4),
+                    'output_per_million' => (float) env('OPENAI_GPT_5_6_SOL_OUTPUT_PER_MILLION', 20),
+                    'long_context_threshold_tokens' => (int) env('OPENAI_GPT_5_6_SOL_LONG_CONTEXT_THRESHOLD', 272000),
+                    'long_context_input_multiplier' => (float) env('OPENAI_GPT_5_6_SOL_LONG_CONTEXT_INPUT_MULTIPLIER', 2),
+                    'long_context_output_multiplier' => (float) env('OPENAI_GPT_5_6_SOL_LONG_CONTEXT_OUTPUT_MULTIPLIER', 1.5),
+                ],
+            ],
+        ],
     ],
 
     /*
