@@ -183,7 +183,7 @@ PROMPT;
 
         $definitions = [];
         $definitions['region'] = $object([
-            'type' => ['const' => 'Region'],
+            'type' => ['type' => 'string', 'const' => 'Region'],
             'id' => $id,
             'semantic' => ['type' => 'string', 'enum' => self::regionSemantics()],
             'layout' => ['type' => 'string', 'enum' => self::layouts()],
@@ -192,34 +192,34 @@ PROMPT;
             'children' => ['type' => 'array', 'minItems' => 1, 'maxItems' => 40, 'items' => ['$ref' => '#/$defs/node']],
         ], ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
         $definitions['text'] = $object([
-            'type' => ['const' => 'Text'],
+            'type' => ['type' => 'string', 'const' => 'Text'],
             'id' => $id,
             'role' => ['type' => 'string', 'enum' => ['eyebrow', 'heading-1', 'heading-2', 'heading-3', 'body', 'small', 'label', 'price', 'step-number', 'summary']],
             'content' => $text(8000),
         ], ['type', 'id', 'role', 'content']);
         $definitions['image'] = $object([
-            'type' => ['const' => 'Image'],
+            'type' => ['type' => 'string', 'const' => 'Image'],
             'id' => $id,
             'alt' => $text(500),
             'caption' => $nullableText(1000),
             'aspect' => ['type' => 'string', 'enum' => ['16:9', '4:3', '3:2', '1:1', '2:3']],
         ], ['type', 'id', 'alt', 'caption', 'aspect']);
         $definitions['link'] = $object([
-            'type' => ['const' => 'Link'],
+            'type' => ['type' => 'string', 'const' => 'Link'],
             'id' => $id,
             'label' => $text(300),
             'href' => $text(500),
             'emphasis' => ['type' => 'string', 'enum' => ['plain', 'secondary', 'primary']],
         ], ['type', 'id', 'label', 'href', 'emphasis']);
         $definitions['button'] = $object([
-            'type' => ['const' => 'Button'],
+            'type' => ['type' => 'string', 'const' => 'Button'],
             'id' => $id,
             'label' => $text(300),
             'button_type' => ['type' => 'string', 'enum' => ['button', 'submit', 'reset']],
             'emphasis' => ['type' => 'string', 'enum' => ['secondary', 'primary']],
         ], ['type', 'id', 'label', 'button_type', 'emphasis']);
         $definitions['input'] = $object([
-            'type' => ['const' => 'Input'],
+            'type' => ['type' => 'string', 'const' => 'Input'],
             'id' => $id,
             'input_type' => ['type' => 'string', 'enum' => ['text', 'email', 'tel', 'url']],
             'label' => $text(200),
@@ -228,7 +228,7 @@ PROMPT;
             'required' => ['type' => 'boolean'],
         ], ['type', 'id', 'input_type', 'label', 'name', 'placeholder', 'required']);
         $definitions['textarea'] = $object([
-            'type' => ['const' => 'Textarea'],
+            'type' => ['type' => 'string', 'const' => 'Textarea'],
             'id' => $id,
             'label' => $text(200),
             'name' => $fieldName,
@@ -240,7 +240,7 @@ PROMPT;
             'value' => $text(100),
         ], ['label', 'value']);
         $definitions['select'] = $object([
-            'type' => ['const' => 'Select'],
+            'type' => ['type' => 'string', 'const' => 'Select'],
             'id' => $id,
             'label' => $text(200),
             'name' => $fieldName,
@@ -249,7 +249,7 @@ PROMPT;
             'options' => ['type' => 'array', 'minItems' => 1, 'maxItems' => 20, 'items' => ['$ref' => '#/$defs/option']],
         ], ['type', 'id', 'label', 'name', 'placeholder', 'required', 'options']);
         $definitions['checkbox'] = $object([
-            'type' => ['const' => 'Checkbox'],
+            'type' => ['type' => 'string', 'const' => 'Checkbox'],
             'id' => $id,
             'label' => $text(300),
             'name' => $fieldName,
@@ -263,7 +263,7 @@ PROMPT;
 
         return [
             ...$object([
-                'version' => ['const' => 2],
+                'version' => ['type' => 'integer', 'const' => 2],
                 'locale' => $text(20, 2),
                 'pages' => ['type' => 'array', 'minItems' => 1, 'maxItems' => 8, 'items' => ['$ref' => '#/$defs/page']],
             ], ['version', 'locale', 'pages']),
