@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Exceptions\InvalidWireframeException;
 use App\Services\Contracts\ReportsWireframeTelemetry;
 use App\Services\Contracts\WireframeGenerator;
+use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -113,6 +115,125 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
     public function telemetry(): ?array
     {
         return $this->telemetry;
+    }
+
+    /** @param array<string,mixed> $siteAst @param array<string,mixed> $brief @return array<string,mixed> */
+    public function startBackground(array $siteAst, array $brief, string $locale, int $wireframeAstVersion = 1): array
+    {
+        $this->validator->validateGenerationInput($siteAst, $locale, $wireframeAstVersion);
+        $response = $this->providerRequest()->post(
+            (string) config('services.openai.url'),
+            $this->providerPayload($siteAst, $brief, $locale, $wireframeAstVersion, null, true),
+        );
+        $this->assertSuccessfulProviderResponse($response);
+        $providerResponse = $response->json();
+        if (! is_array($providerResponse)
+            || $this->identifier($providerResponse['id'] ?? null) === null
+            || ! in_array($providerResponse['status'] ?? null, ['queued', 'in_progress', 'completed'], true)) {
+            throw new RuntimeException('The wireframe provider returned an invalid background job.');
+        }
+
+        return $providerResponse;
+    }
+
+    /** @return array<string,mixed> */
+    public function retrieveBackground(string $responseId): array
+    {
+        if ($this->identifier($responseId) === null || ! str_starts_with($responseId, 'resp_')) {
+            throw new RuntimeException('The wireframe provider response identifier is invalid.');
+        }
+        $response = $this->providerRequest()->get(rtrim((string) config('services.openai.url'), '/').'/'.rawurlencode($responseId));
+        $this->assertSuccessfulProviderResponse($response);
+        $providerResponse = $response->json();
+        if (! is_array($providerResponse) || ! is_string($providerResponse['status'] ?? null)) {
+            throw new RuntimeException('The wireframe provider returned an invalid background status.');
+        }
+
+        return $providerResponse;
+    }
+
+    /** @param array<string,mixed> $providerResponse @param array<string,mixed> $siteAst @return array{wireframe:array<string,mixed>,telemetry:array<string,mixed>} */
+    public function completeBackground(array $providerResponse, array $siteAst, string $locale, int $wireframeAstVersion): array
+    {
+        if (($providerResponse['status'] ?? null) !== 'completed') {
+            throw new RuntimeException('The wireframe provider response is not complete.');
+        }
+        $text = is_string($providerResponse['output_text'] ?? null)
+            ? $providerResponse['output_text']
+            : $this->outputText((array) ($providerResponse['output'] ?? []));
+        $document = json_decode($text, true);
+        if (! is_array($document)) {
+            throw new RuntimeException('The wireframe provider returned invalid JSON.');
+        }
+        $wireframe = $this->validator->validate($document, $siteAst, $wireframeAstVersion, $locale);
+        $providerTelemetry = new OpenAiTelemetry((array) config('services.openai.rate_card', []));
+        $providerTelemetry->beginSemanticAttempt();
+        $providerTelemetry->recordProviderRequest();
+        $providerTelemetry->recordResponse($providerResponse);
+
+        return ['wireframe' => $wireframe, 'telemetry' => $providerTelemetry->toArray()];
+    }
+
+    private function providerRequest(): PendingRequest
+    {
+        $request = Http::withToken((string) config('services.openai.key'))
+            ->acceptJson()
+            ->timeout((int) config('services.openai.timeout', 300))
+            ->connectTimeout((int) config('services.openai.connect_timeout', 10));
+        $retryDelays = $this->retryDelays();
+
+        return $retryDelays === [] ? $request : $request->retry($retryDelays, throw: false);
+    }
+
+    /** @param array<string,mixed> $siteAst @param array<string,mixed> $brief @return array<string,mixed> */
+    private function providerPayload(
+        array $siteAst,
+        array $brief,
+        string $locale,
+        int $wireframeAstVersion,
+        ?string $feedback,
+        bool $background,
+    ): array {
+        return [
+            'model' => (string) config('services.openai.model'),
+            'instructions' => $this->instructions($wireframeAstVersion),
+            'input' => json_encode([
+                'site_ast' => $siteAst,
+                'brief' => $brief,
+                'locale' => $locale,
+                'wireframe_ast_version' => $wireframeAstVersion,
+                'validation_feedback' => $feedback,
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            'reasoning' => ['effort' => (string) config('services.openai.reasoning_effort', 'medium')],
+            'text' => ['format' => [
+                'type' => 'json_schema',
+                'name' => 'wireframes',
+                'strict' => true,
+                'schema' => $this->schema($wireframeAstVersion),
+            ]],
+            'max_output_tokens' => $wireframeAstVersion === 2 ? 64000 : 12000,
+            'background' => $background,
+            'store' => false,
+            'metadata' => ['stage' => 'wireframes'],
+        ];
+    }
+
+    private function assertSuccessfulProviderResponse(Response $response): void
+    {
+        if ($response->successful()) {
+            return;
+        }
+        Log::warning('Wireframe provider rejected request.', [
+            'provider' => 'openai',
+            'model' => $this->identifier(config('services.openai.model')),
+            'status' => $response->status(),
+            'request_id' => $this->identifier($response->header('x-request-id')),
+            'error_type' => $this->identifier($response->json('error.type')),
+            'error_code' => $this->identifier($response->json('error.code')),
+            'error_param' => $this->identifier($response->json('error.param')),
+        ]);
+
+        throw new RuntimeException('The wireframe provider rejected the request.');
     }
 
     private function identifier(mixed $value): ?string

@@ -27,6 +27,17 @@ Wireframe AST v2 preserves the Site AST page key, path, and title, then models t
 }
 ```
 
+For production orchestration, use the non-blocking job interface with the same authenticated JSON body and `Idempotency-Key` header:
+
+```text
+POST /api/v1/wireframe-jobs
+GET  /api/v1/wireframe-jobs/{job}
+```
+
+The start request returns HTTP 202 with `queued` or `in_progress`. Poll the returned job URL until `status` is `succeeded` or `failed`; a successful record contains `result.wireframe_ast` and `result.telemetry`. This path starts an OpenAI background response and therefore does not hold a Laravel Cloud request open for the full model runtime. Transient provider polling failures return HTTP 502 without terminally failing the job, so the orchestrator can retry the same GET safely.
+
+Job input and successful output are application-encrypted in the configured cache store and expire after `WIREFRAME_JOB_TTL_SECONDS` (24 hours by default). Public job records omit the encrypted payload and internal provider response identifier. OpenAI background execution uses `store=false`; the provider may retain response data temporarily as required for asynchronous polling, but it is not requested for long-term response storage.
+
 Successful provider-backed responses may include `telemetry` with the runtime provider, response model and ID, input/cached-input/output/reasoning token counts, provider request/semantic-attempt/retry counts, provider duration, and rate-card metadata. `reasoning_tokens` is a subset of `output_tokens`; it is reported for auditing but is not charged a second time. `estimated_cost` is calculated only when complete usage and a matching configured rate card are available, so it is an estimate rather than an invoice. Prompts, API keys, and raw reasoning are never included.
 
 An idempotency replay reports zero tokens, cost, provider requests, attempts, retries, and provider duration for that replay. Its `generation_telemetry_reference` SHA-256 digest identifies the original generation telemetry without presenting the original usage as newly incurred.
