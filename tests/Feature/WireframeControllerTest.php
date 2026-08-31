@@ -10,6 +10,7 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
+use Tests\Support\WireframeV2Fixture;
 use Tests\TestCase;
 
 final class WireframeControllerTest extends TestCase
@@ -33,6 +34,27 @@ final class WireframeControllerTest extends TestCase
             ->assertHeader('Idempotent-Replayed', 'false')
             ->assertJsonPath('wireframe_ast.pages.0.key', 'home')
             ->assertJsonPath('wireframe_ast.pages.0.sections.0.composition', 'hero');
+    }
+
+    public function test_v2_is_explicitly_selected_while_v1_remains_the_default(): void
+    {
+        $generator = $this->bindGenerator(function (array $siteAst, int $call, array $brief, string $locale, int $version): array {
+            $this->assertSame(2, $version);
+
+            return WireframeV2Fixture::document();
+        });
+        $payload = $this->payload();
+        $payload['site_ast'] = WireframeV2Fixture::siteAst();
+        $payload['wireframe_ast_version'] = 2;
+
+        $this->withToken('test-token')
+            ->withHeader('Idempotency-Key', 'wireframe-generation-v2-0001')
+            ->postJson('/api/v1/wireframes', $payload)
+            ->assertOk()
+            ->assertJsonPath('wireframe_ast.version', 2)
+            ->assertJsonPath('wireframe_ast.pages.0.root.semantic', 'document');
+
+        $this->assertSame([2], $generator->versions);
     }
 
     public function test_authentication_and_json_object_shape_are_enforced(): void
@@ -66,6 +88,41 @@ final class WireframeControllerTest extends TestCase
         $second->assertOk()->assertHeader('Idempotent-Replayed', 'true');
         $this->assertSame($first->json(), $second->json());
         $this->assertSame(1, $generator->calls);
+    }
+
+    public function test_v2_replay_is_encrypted_at_rest_and_expires_instead_of_persisting_customer_copy_forever(): void
+    {
+        config()->set([
+            'wireframe.idempotency.store' => 'array',
+            'wireframe.idempotency.v2_response_ttl_seconds' => 86400,
+        ]);
+        $generator = $this->bindGenerator(fn (): array => WireframeV2Fixture::document());
+        $payload = $this->payload();
+        $payload['wireframe_ast_version'] = 2;
+        $payload['site_ast'] = WireframeV2Fixture::siteAst();
+        $idempotencyKey = 'wireframe-v2-encrypted-replay-0001';
+
+        $first = $this->withToken('test-token')
+            ->withHeader('Idempotency-Key', $idempotencyKey)
+            ->postJson('/api/v1/wireframes', $payload)
+            ->assertOk()
+            ->assertHeader('Idempotent-Replayed', 'false');
+        $second = $this->withToken('test-token')
+            ->withHeader('Idempotency-Key', $idempotencyKey)
+            ->postJson('/api/v1/wireframes', $payload)
+            ->assertOk()
+            ->assertHeader('Idempotent-Replayed', 'true');
+
+        $this->assertSame($first->json('wireframe_ast'), $second->json('wireframe_ast'));
+        $this->assertSame(1, $generator->calls);
+        $record = Cache::get('wireframe-idempotency:'.hash('sha256', $idempotencyKey));
+        $this->assertIsArray($record);
+        $this->assertSame(['version', 'operation', 'request_hash', 'state', 'response_encrypted'], array_keys($record));
+        $this->assertSame(2, $record['version']);
+        $this->assertIsString($record['response_encrypted']);
+        $serialized = json_encode($record, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+        $this->assertStringNotContainsString('作り直す前に', $serialized);
+        $this->assertStringNotContainsString('無料相談を送信する', $serialized);
     }
 
     public function test_legacy_raw_wireframe_records_remain_replayable_without_telemetry(): void
@@ -335,12 +392,16 @@ final class RecordingWireframeGenerator implements WireframeGenerator
 {
     public int $calls = 0;
 
+    /** @var list<int> */
+    public array $versions = [];
+
     public function __construct(private readonly Closure $callback) {}
 
-    public function generate(array $siteAst, array $brief, string $locale): array
+    public function generate(array $siteAst, array $brief, string $locale, int $wireframeAstVersion = 1): array
     {
         $this->calls++;
+        $this->versions[] = $wireframeAstVersion;
 
-        return ($this->callback)($siteAst, $this->calls, $brief, $locale);
+        return ($this->callback)($siteAst, $this->calls, $brief, $locale, $wireframeAstVersion);
     }
 }

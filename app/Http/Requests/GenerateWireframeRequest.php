@@ -12,6 +12,7 @@ final class GenerateWireframeRequest extends ContractRequest
     {
         return [
             'contract_version' => ['required', 'in:1.0'],
+            'wireframe_ast_version' => ['sometimes', 'integer', 'in:1,2'],
             'site_ast' => ['required', 'array'],
             'brief' => ['required', 'array:organization,goals,audience,tone,requirements,materials'],
             'brief.organization' => ['required', 'string', 'min:1', 'max:1000'],
@@ -54,6 +55,9 @@ final class GenerateWireframeRequest extends ContractRequest
 
     protected function prepareForValidation(): void
     {
-        $this->merge(['locale' => $this->input('locale', 'ja')]);
+        $this->merge([
+            'locale' => $this->input('locale', 'ja'),
+            'wireframe_ast_version' => $this->input('wireframe_ast_version', 1),
+        ]);
     }
 }

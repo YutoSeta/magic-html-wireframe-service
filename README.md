@@ -1,8 +1,8 @@
 # Magic HTML Wireframe Service
 
-A stateless Tier 0 generator that converts Site AST plus a structured brief into a semantic Vocabulary AST. It has no application database and can be tested or replaced without affecting stored sites.
+A stateless Tier 0 generator that converts Site AST plus a structured brief into a semantic Wireframe AST. It has no application database and can be tested or replaced without affecting stored sites.
 
-The output describes page sections by stable keys, composition types, and semantic roles. It never generates copy, HTML, CSS, selectors, colors, dimensions, or asset URLs.
+The default v1 output describes page sections by stable keys, composition types, and semantic roles. The opt-in v2 output is a nested, content-bearing information architecture whose branches are `Region` nodes and whose leaves are concrete `Text`, `Image`, `Link`, `Button`, `Input`, `Textarea`, `Select`, or `Checkbox` nodes. Neither version contains CSS, selectors, colors, dimensions, scripts, or asset URLs.
 
 ## API
 
@@ -11,16 +11,40 @@ The output describes page sections by stable keys, composition types, and semant
 - `site_ast` — canonical site information architecture
 - `brief` — normalized interview fields
 - `locale` — output locale
+- `wireframe_ast_version` — optional `1` or `2`; defaults to `1` for Site Composer compatibility
 
-Every Site AST page appears exactly once in `wireframe_ast`. Each page contains 2–8 sections and uses the finite composition and role vocabularies enforced by the validator.
+Every Site AST page appears exactly once in `wireframe_ast`. v1 pages contain 2–8 sections and use the finite composition and role vocabularies enforced by the validator.
+
+Wireframe AST v2 preserves the Site AST page key, path, and title, then models the page as a finite semantic tree. It carries real locale copy so that information hierarchy, AIDMA order, forms, media placement, and conversion paths can be reviewed without applying a brand skin. It enforces one `heading-1`, 2–12 direct `main` sections, unique node IDs, a depth limit of 8, a 300-node page limit, an 800-node request limit, safe local links, list ancestry, non-nested forms, and form-control ancestry. A request contains at most eight pages, starts with `home` at `/`, and uses unique canonical page paths. Generic `Item` and `Action` leaves are not part of v2.
+
+```json
+{
+  "contract_version": "1.0",
+  "wireframe_ast_version": 2,
+  "site_ast": {},
+  "brief": {},
+  "locale": "ja"
+}
+```
 
 Successful provider-backed responses may include `telemetry` with the runtime provider, response model and ID, input/cached-input/output/reasoning token counts, provider request/semantic-attempt/retry counts, provider duration, and rate-card metadata. `reasoning_tokens` is a subset of `output_tokens`; it is reported for auditing but is not charged a second time. `estimated_cost` is calculated only when complete usage and a matching configured rate card are available, so it is an estimate rather than an invoice. Prompts, API keys, and raw reasoning are never included.
 
 An idempotency replay reports zero tokens, cost, provider requests, attempts, retries, and provider duration for that replay. Its `generation_telemetry_reference` SHA-256 digest identifies the original generation telemetry without presenting the original usage as newly incurred.
 
+The idempotency store persists only the SHA-256 request digest. Content-free v1 responses retain their legacy immutable replay behavior. Content-bearing v2 responses are application-encrypted and expire after `WIREFRAME_IDEMPOTENCY_V2_RESPONSE_TTL_SECONDS` (24 hours by default), so customer copy and form labels are neither plaintext cache records nor indefinite audit data.
+
 ### Deterministic preview files
 
-`POST /api/v1/wireframes/materialize` accepts `contract_version` and a validated `wireframe_ast`. It performs no model or external HTTP call and returns neutral, self-contained HTML files:
+`POST /api/v1/wireframes/materialize` accepts `contract_version` and a validated v1 or v2 `wireframe_ast`. It performs no model or external HTTP call and returns self-contained HTML files. v1 keeps its legacy neutral renderer. v2 receives the server-owned, deterministic `wireframe-neutral-v1` decorate AST:
+
+- white canvas and transparent structural regions
+- gray image placeholders
+- solid region/leaf borders and dashed nested-container borders
+- fixed minimum margin, padding, and action height
+- responsive grid/split collapse at 720 px
+- no brand color, gradient, shadow, radius, animation, font asset, or external resource
+
+This `wireframe_decorate_ast` exists only to expose nesting and hierarchy. It is not the Styler Design/Decor AST and is never generated or overridden by the model or caller.
 
 ```json
 {
@@ -42,6 +66,10 @@ An idempotency replay reports zero tokens, cost, provider requests, attempts, re
       "sha256": "<sha256-of-decoded-content>"
     }
   ],
+  "wireframe_decorate_ast": {
+    "version": 1,
+    "preset": "wireframe-neutral-v1"
+  },
   "telemetry": {
     "operation": "wireframes.materialize",
     "provider": "deterministic",

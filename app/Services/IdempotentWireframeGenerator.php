@@ -10,6 +10,7 @@ use App\Services\Contracts\WireframeGenerator;
 use App\Support\CanonicalJson;
 use Illuminate\Cache\CacheManager;
 use Illuminate\Cache\Repository;
+use Illuminate\Support\Facades\Crypt;
 use Throwable;
 
 final class IdempotentWireframeGenerator
@@ -36,6 +37,7 @@ final class IdempotentWireframeGenerator
         array $siteAst,
         array $brief,
         string $locale,
+        int $wireframeAstVersion = 1,
     ): array {
         $keyHash = hash('sha256', $idempotencyKey);
         $requestHash = hash('sha256', "wireframes\0{$contractVersion}\0{$requestBytes}");
@@ -50,7 +52,7 @@ final class IdempotentWireframeGenerator
         }
 
         try {
-            $wireframe = $this->generator->generate($siteAst, $brief, $locale);
+            $wireframe = $this->generator->generate($siteAst, $brief, $locale, $wireframeAstVersion);
         } catch (Throwable $exception) {
             $this->abandon($keyHash, $requestHash);
 
@@ -61,7 +63,7 @@ final class IdempotentWireframeGenerator
             ? $this->generator->telemetry()
             : null;
 
-        return $this->complete($keyHash, $requestHash, $wireframe, $telemetry);
+        return $this->complete($keyHash, $requestHash, $wireframe, $telemetry, $wireframeAstVersion);
     }
 
     /** @return array{wireframe:array<string,mixed>|null,telemetry:array<string,mixed>|null} */
@@ -71,8 +73,13 @@ final class IdempotentWireframeGenerator
             $record = $this->record($keyHash);
             if ($record !== null) {
                 $this->assertSameRequest($record, $requestHash);
-                if (($record['state'] ?? null) === 'completed' && is_array($record['response'] ?? null)) {
-                    return $this->restoreResponse($record['response']);
+                if (($record['state'] ?? null) === 'completed') {
+                    $response = $this->completedResponse($record);
+                    if ($response !== null) {
+                        return $this->restoreResponse($response);
+                    }
+
+                    throw new IdempotencyStoreUnavailableException;
                 }
 
                 throw new IdempotencyInProgressException;
@@ -97,17 +104,21 @@ final class IdempotentWireframeGenerator
      * @param  array<string,mixed>|null  $telemetry
      * @return array{wireframe:array<string,mixed>,telemetry:array<string,mixed>|null,replayed:bool}
      */
-    private function complete(string $keyHash, string $requestHash, array $wireframe, ?array $telemetry): array
+    private function complete(string $keyHash, string $requestHash, array $wireframe, ?array $telemetry, int $wireframeAstVersion): array
     {
-        return $this->withLock($keyHash, function () use ($keyHash, $requestHash, $wireframe, $telemetry): array {
+        return $this->withLock($keyHash, function () use ($keyHash, $requestHash, $wireframe, $telemetry, $wireframeAstVersion): array {
             $record = $this->record($keyHash);
             if ($record === null) {
                 throw new IdempotencyInProgressException('The Idempotency-Key claim expired before its response could be recorded.');
             }
 
             $this->assertSameRequest($record, $requestHash);
-            if (($record['state'] ?? null) === 'completed' && is_array($record['response'] ?? null)) {
-                $restored = $this->restoreResponse($record['response']);
+            if (($record['state'] ?? null) === 'completed') {
+                $response = $this->completedResponse($record);
+                if ($response === null) {
+                    throw new IdempotencyStoreUnavailableException;
+                }
+                $restored = $this->restoreResponse($response);
 
                 return [
                     'wireframe' => $restored['wireframe'],
@@ -123,13 +134,23 @@ final class IdempotentWireframeGenerator
             if ($telemetry !== null) {
                 $response['telemetry'] = $telemetry;
             }
-            $stored = $this->cache->forever($this->recordKey($keyHash), [
-                'version' => 1,
-                'operation' => 'wireframes.generate',
-                'request_hash' => $requestHash,
-                'state' => 'completed',
-                'response' => $response,
-            ]);
+            if ($wireframeAstVersion === 2) {
+                $stored = $this->cache->put($this->recordKey($keyHash), [
+                    'version' => 2,
+                    'operation' => 'wireframes.generate',
+                    'request_hash' => $requestHash,
+                    'state' => 'completed',
+                    'response_encrypted' => $this->encryptResponse($response),
+                ], now()->addSeconds(max(60, (int) config('wireframe.idempotency.v2_response_ttl_seconds', 86400))));
+            } else {
+                $stored = $this->cache->forever($this->recordKey($keyHash), [
+                    'version' => 1,
+                    'operation' => 'wireframes.generate',
+                    'request_hash' => $requestHash,
+                    'state' => 'completed',
+                    'response' => $response,
+                ]);
+            }
             if (! $stored) {
                 throw new IdempotencyStoreUnavailableException;
             }
@@ -156,6 +177,43 @@ final class IdempotentWireframeGenerator
         }
 
         return ['wireframe' => $response, 'telemetry' => null];
+    }
+
+    /** @param array<string,mixed> $record @return array<string,mixed>|null */
+    private function completedResponse(array $record): ?array
+    {
+        if (is_array($record['response'] ?? null)) {
+            return $record['response'];
+        }
+
+        if (! is_string($record['response_encrypted'] ?? null)) {
+            return null;
+        }
+
+        try {
+            $response = json_decode(Crypt::decryptString($record['response_encrypted']), true, flags: JSON_THROW_ON_ERROR);
+        } catch (Throwable) {
+            throw new IdempotencyStoreUnavailableException;
+        }
+
+        if (! is_array($response)) {
+            throw new IdempotencyStoreUnavailableException;
+        }
+
+        return $response;
+    }
+
+    /** @param array<string,mixed> $response */
+    private function encryptResponse(array $response): string
+    {
+        try {
+            return Crypt::encryptString(json_encode(
+                $response,
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+            ));
+        } catch (Throwable) {
+            throw new IdempotencyStoreUnavailableException;
+        }
     }
 
     /** @param array<string,mixed>|null $telemetry */
