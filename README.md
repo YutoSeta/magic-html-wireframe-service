@@ -41,6 +41,10 @@ The idempotency store persists only the SHA-256 request digest. Content-free v1 
 - gray image placeholders
 - solid region/leaf borders and dashed nested-container borders
 - fixed minimum margin, padding, and action height
+- compact horizontal spacing for nested regions and grids
+- black background with white text for Button and primary action-link leaves
+- navy underlined ordinary links
+- light-gray form controls and max-width/word-break safeguards for long content
 - responsive grid/split collapse at 720 px
 - no brand color, gradient, shadow, radius, animation, font asset, or external resource
 
