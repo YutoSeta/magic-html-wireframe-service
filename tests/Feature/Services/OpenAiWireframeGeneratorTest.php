@@ -182,7 +182,7 @@ final class OpenAiWireframeGeneratorTest extends TestCase
         Http::preventStrayRequests();
         Http::fake([
             'https://api.openai.test/v1/responses' => Http::sequence()
-                ->push($this->providerResponse('resp_v2', WireframeV2Fixture::document(), 100, 20, 80, 10)),
+                ->push($this->providerResponse('resp_v2', $this->providerDocument(WireframeV2Fixture::document()), 100, 20, 80, 10)),
         ]);
         $payload = $this->payload();
         $payload['wireframe_ast_version'] = 2;
@@ -216,11 +216,12 @@ final class OpenAiWireframeGeneratorTest extends TestCase
                 && ($schema['$defs']['checkbox']['properties']['type']['type'] ?? null) === 'string'
                 && ($schema['$defs']['region']['properties']['children']['items']['$ref'] ?? null) === '#/$defs/node'
                 && ($schema['$defs']['listRegion']['properties']['children']['items']['$ref'] ?? null) === '#/$defs/listItemRegion'
-                && ($schema['$defs']['formRegion']['properties']['children']['items']['$ref'] ?? null) === '#/$defs/formNode'
-                && ($schema['$defs']['formRegion']['properties']['children']['maxItems'] ?? null) === 16
+                && ($schema['$defs']['formRegion']['properties']['controls']['items']['$ref'] ?? null) === '#/$defs/formControlNode'
+                && ($schema['$defs']['formRegion']['properties']['submit']['$ref'] ?? null) === '#/$defs/submitButton'
+                && ($schema['$defs']['submitButton']['properties']['button_type']['const'] ?? null) === 'submit'
                 && ($schema['$defs']['button']['properties']['button_type']['const'] ?? null) === 'button'
                 && count($schema['$defs']['node']['anyOf'] ?? []) === 7
-                && count($schema['$defs']['formNode']['anyOf'] ?? []) === 9
+                && count($schema['$defs']['formControlNode']['anyOf'] ?? []) === 4
                 && ($body['max_output_tokens'] ?? null) === 64000
                 && ! str_contains(json_encode($body, JSON_THROW_ON_ERROR), 'wireframe-neutral-v1');
         });
@@ -329,6 +330,33 @@ final class OpenAiWireframeGeneratorTest extends TestCase
                 ],
             ]],
         ];
+    }
+
+    /** @param array<string,mixed> $document @return array<string,mixed> */
+    private function providerDocument(array $document): array
+    {
+        $convert = function (array $node) use (&$convert): array {
+            if (($node['type'] ?? null) !== 'Region') {
+                return $node;
+            }
+            $children = array_map($convert, $node['children'] ?? []);
+            if (($node['semantic'] ?? null) !== 'form') {
+                $node['children'] = $children;
+
+                return $node;
+            }
+            $node['content'] = array_values(array_filter($children, fn (array $child): bool => ! in_array($child['type'] ?? null, ['Input', 'Textarea', 'Select', 'Checkbox'], true) && ($child['button_type'] ?? null) !== 'submit'));
+            $node['controls'] = array_values(array_filter($children, fn (array $child): bool => in_array($child['type'] ?? null, ['Input', 'Textarea', 'Select', 'Checkbox'], true)));
+            $node['submit'] = array_values(array_filter($children, fn (array $child): bool => ($child['type'] ?? null) === 'Button' && ($child['button_type'] ?? null) === 'submit'))[0];
+            unset($node['children']);
+
+            return $node;
+        };
+        foreach ($document['pages'] as $index => $page) {
+            $document['pages'][$index]['root'] = $convert($page['root']);
+        }
+
+        return $document;
     }
 
     /** @return array<string,mixed> */

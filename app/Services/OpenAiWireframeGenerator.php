@@ -97,6 +97,7 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
 
                 continue;
             }
+            $document = $this->normalizeProviderDocument($document, $wireframeAstVersion);
 
             try {
                 $wireframe = $this->validator->validate($document, $siteAst, $wireframeAstVersion, $locale);
@@ -170,6 +171,7 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
         if (! is_array($document)) {
             throw new RuntimeException('The wireframe provider returned invalid JSON.');
         }
+        $document = $this->normalizeProviderDocument($document, $wireframeAstVersion);
         $wireframe = $this->validator->validate($document, $siteAst, $wireframeAstVersion, $locale);
 
         return ['wireframe' => $wireframe, 'telemetry' => $this->backgroundTelemetry($providerResponse)];
@@ -294,7 +296,7 @@ You are a senior information architect and conversion-focused wireframe director
 
 Use an AIDMA-aware order on conversion pages: attention, interest, desire, memory, then action. Vary rhythm with split, grid, stack, timeline-like lists, FAQ, and form structures. Put a clear promise, primary action, and trust facts above the fold; place objections and decision information before the final action. Use three deliberate CTA moments when appropriate. Every page needs exactly one heading-1 and 2 to 12 section Regions. The request may contain at most 8 pages, 300 nodes per page, and 800 nodes in total; prefer concise structures that fit comfortably within those limits.
 
-Only Region may branch. Every branch must end in a concrete Text, Image, Link, Button, Input, Textarea, Select, or Checkbox leaf. Use actual labels, targets, image intent/alt text, form fields, options, helper copy, and consent links. Do not emit generic Item, Action, Title, Text, Image, Section, or placeholder-only content. Use semantic form only for an actual interactive form: it must contain at least one labeled Input, Textarea, Select, or Checkbox and exactly one submit Button, with no more than 16 direct children. A visual inquiry section without controls is a group, never a form. Use ordered-list or unordered-list only when every direct child is a list-item Region. Images describe placement and intent only and never contain URLs.
+Only Region may branch. Every branch must end in a concrete Text, Image, Link, Button, Input, Textarea, Select, or Checkbox leaf. Use actual labels, targets, image intent/alt text, form fields, options, helper copy, and consent links. Do not emit generic Item, Action, Title, Text, Image, Section, or placeholder-only content. Use semantic form only for an actual interactive form. Its schema deliberately separates introductory content, one-or-more labeled controls, and exactly one submit Button; populate all three faithfully. A visual inquiry section without controls is a group, never a form. Use ordered-list or unordered-list only when every direct child is a list-item Region. Images describe placement and intent only and never contain URLs.
 
 Do not output HTML, CSS, classes, selectors, colors, dimensions, fonts, decoration, remote URLs, scripts, or vendor components. The renderer owns a fixed neutral wireframe decoration. Node IDs are internal lowercase kebab-case identifiers and must never be written into visible copy. Links must use a resolvable local #anchor or a site-relative /path. Keep claims, prices, hours, guarantees, legal statements, and contact constraints faithful to the source materials.
 PROMPT;
@@ -314,37 +316,32 @@ PROMPT;
         $id = ['type' => 'string', 'pattern' => '^[a-z0-9][a-z0-9-]*$', 'maxLength' => 100];
         $fieldName = ['type' => 'string', 'pattern' => '^[a-z][a-z0-9_-]*$', 'maxLength' => 100];
 
-        $regionProperties = fn (array $semantics, array $children): array => [
+        $regionProperties = fn (array $semantics): array => [
             'type' => ['type' => 'string', 'const' => 'Region'],
             'id' => $id,
             'semantic' => ['type' => 'string', 'enum' => $semantics],
             'layout' => ['type' => 'string', 'enum' => self::layouts()],
             'journey_stage' => ['type' => 'string', 'enum' => ['none', 'attention', 'interest', 'desire', 'memory', 'action']],
             'emphasis' => ['type' => 'string', 'enum' => ['neutral', 'supporting', 'standard', 'strong', 'primary']],
-            'children' => $children,
         ];
 
         $definitions = [];
-        $definitions['region'] = $object($regionProperties(
+        $definitions['region'] = $object([...$regionProperties(
             ['document', 'header', 'navigation', 'main', 'section', 'article', 'aside', 'footer', 'group'],
-            ['type' => 'array', 'minItems' => 1, 'maxItems' => 40, 'items' => ['$ref' => '#/$defs/node']],
-        ), ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
-        $definitions['listRegion'] = $object($regionProperties(
+        ), 'children' => ['type' => 'array', 'minItems' => 1, 'maxItems' => 40, 'items' => ['$ref' => '#/$defs/node']]], ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
+        $definitions['listRegion'] = $object([...$regionProperties(
             ['ordered-list', 'unordered-list'],
-            ['type' => 'array', 'minItems' => 1, 'maxItems' => 20, 'items' => ['$ref' => '#/$defs/listItemRegion']],
-        ), ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
-        $definitions['listItemRegion'] = $object($regionProperties(
+        ), 'children' => ['type' => 'array', 'minItems' => 1, 'maxItems' => 20, 'items' => ['$ref' => '#/$defs/listItemRegion']]], ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
+        $definitions['listItemRegion'] = $object([...$regionProperties(
             ['list-item'],
-            ['type' => 'array', 'minItems' => 1, 'maxItems' => 12, 'items' => ['$ref' => '#/$defs/node']],
-        ), ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
-        $definitions['formRegion'] = $object($regionProperties(
+        ), 'children' => ['type' => 'array', 'minItems' => 1, 'maxItems' => 12, 'items' => ['$ref' => '#/$defs/node']]], ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
+        $definitions['formRegion'] = $object([...$regionProperties(
             ['form'],
-            ['type' => 'array', 'minItems' => 2, 'maxItems' => 16, 'items' => ['$ref' => '#/$defs/formNode']],
-        ), ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
-        $definitions['fieldGroupRegion'] = $object($regionProperties(
-            ['field-group', 'group'],
-            ['type' => 'array', 'minItems' => 1, 'maxItems' => 16, 'items' => ['$ref' => '#/$defs/formNode']],
-        ), ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
+        ),
+            'content' => ['type' => 'array', 'minItems' => 1, 'maxItems' => 8, 'items' => ['$ref' => '#/$defs/formContentNode']],
+            'controls' => ['type' => 'array', 'minItems' => 1, 'maxItems' => 12, 'items' => ['$ref' => '#/$defs/formControlNode']],
+            'submit' => ['$ref' => '#/$defs/submitButton'],
+        ], ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'content', 'controls', 'submit']);
         $definitions['text'] = $object([
             'type' => ['type' => 'string', 'const' => 'Text'],
             'id' => $id,
@@ -372,11 +369,11 @@ PROMPT;
             'button_type' => ['type' => 'string', 'const' => 'button'],
             'emphasis' => ['type' => 'string', 'enum' => ['secondary', 'primary']],
         ], ['type', 'id', 'label', 'button_type', 'emphasis']);
-        $definitions['formButton'] = $object([
+        $definitions['submitButton'] = $object([
             'type' => ['type' => 'string', 'const' => 'Button'],
             'id' => $id,
             'label' => $text(300),
-            'button_type' => ['type' => 'string', 'enum' => ['button', 'submit', 'reset']],
+            'button_type' => ['type' => 'string', 'const' => 'submit'],
             'emphasis' => ['type' => 'string', 'enum' => ['secondary', 'primary']],
         ], ['type', 'id', 'label', 'button_type', 'emphasis']);
         $definitions['input'] = $object([
@@ -421,9 +418,13 @@ PROMPT;
             fn (string $name): array => ['$ref' => "#/\$defs/{$name}"],
             ['region', 'listRegion', 'formRegion', 'text', 'image', 'link', 'button'],
         )];
-        $definitions['formNode'] = ['anyOf' => array_map(
+        $definitions['formContentNode'] = ['anyOf' => array_map(
             fn (string $name): array => ['$ref' => "#/\$defs/{$name}"],
-            ['fieldGroupRegion', 'text', 'image', 'link', 'formButton', 'input', 'textarea', 'select', 'checkbox'],
+            ['text', 'image', 'link', 'button'],
+        )];
+        $definitions['formControlNode'] = ['anyOf' => array_map(
+            fn (string $name): array => ['$ref' => "#/\$defs/{$name}"],
+            ['input', 'textarea', 'select', 'checkbox'],
         )];
 
         return [
@@ -442,6 +443,45 @@ PROMPT;
                 ], ['key', 'path', 'title', 'root']),
             ],
         ];
+    }
+
+    /** @param array<string,mixed> $document @return array<string,mixed> */
+    private function normalizeProviderDocument(array $document, int $wireframeAstVersion): array
+    {
+        if ($wireframeAstVersion !== 2 || ! is_array($document['pages'] ?? null)) {
+            return $document;
+        }
+        foreach ($document['pages'] as $pageIndex => $page) {
+            if (is_array($page) && is_array($page['root'] ?? null)) {
+                $document['pages'][$pageIndex]['root'] = $this->normalizeProviderNode($page['root']);
+            }
+        }
+
+        return $document;
+    }
+
+    /** @param array<string,mixed> $node @return array<string,mixed> */
+    private function normalizeProviderNode(array $node): array
+    {
+        if (($node['type'] ?? null) !== 'Region') {
+            return $node;
+        }
+        if (($node['semantic'] ?? null) === 'form'
+            && is_array($node['content'] ?? null)
+            && is_array($node['controls'] ?? null)
+            && is_array($node['submit'] ?? null)) {
+            $node['children'] = [...$node['content'], ...$node['controls'], $node['submit']];
+            unset($node['content'], $node['controls'], $node['submit']);
+        }
+        if (is_array($node['children'] ?? null)) {
+            foreach ($node['children'] as $childIndex => $child) {
+                if (is_array($child)) {
+                    $node['children'][$childIndex] = $this->normalizeProviderNode($child);
+                }
+            }
+        }
+
+        return $node;
     }
 
     /** @return list<string> */
