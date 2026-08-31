@@ -215,7 +215,12 @@ final class OpenAiWireframeGeneratorTest extends TestCase
                 && ($schema['$defs']['region']['properties']['type']['const'] ?? null) === 'Region'
                 && ($schema['$defs']['checkbox']['properties']['type']['type'] ?? null) === 'string'
                 && ($schema['$defs']['region']['properties']['children']['items']['$ref'] ?? null) === '#/$defs/node'
-                && count($schema['$defs']['node']['anyOf'] ?? []) === 9
+                && ($schema['$defs']['listRegion']['properties']['children']['items']['$ref'] ?? null) === '#/$defs/listItemRegion'
+                && ($schema['$defs']['formRegion']['properties']['children']['items']['$ref'] ?? null) === '#/$defs/formNode'
+                && ($schema['$defs']['formRegion']['properties']['children']['maxItems'] ?? null) === 16
+                && ($schema['$defs']['button']['properties']['button_type']['const'] ?? null) === 'button'
+                && count($schema['$defs']['node']['anyOf'] ?? []) === 7
+                && count($schema['$defs']['formNode']['anyOf'] ?? []) === 9
                 && ($body['max_output_tokens'] ?? null) === 64000
                 && ! str_contains(json_encode($body, JSON_THROW_ON_ERROR), 'wireframe-neutral-v1');
         });

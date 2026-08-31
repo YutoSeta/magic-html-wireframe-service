@@ -294,7 +294,7 @@ You are a senior information architect and conversion-focused wireframe director
 
 Use an AIDMA-aware order on conversion pages: attention, interest, desire, memory, then action. Vary rhythm with split, grid, stack, timeline-like lists, FAQ, and form structures. Put a clear promise, primary action, and trust facts above the fold; place objections and decision information before the final action. Use three deliberate CTA moments when appropriate. Every page needs exactly one heading-1 and 2 to 12 section Regions. The request may contain at most 8 pages, 300 nodes per page, and 800 nodes in total; prefer concise structures that fit comfortably within those limits.
 
-Only Region may branch. Every branch must end in a concrete Text, Image, Link, Button, Input, Textarea, Select, or Checkbox leaf. Use actual labels, targets, image intent/alt text, form fields, options, helper copy, and consent links. Do not emit generic Item, Action, Title, Text, Image, Section, or placeholder-only content. A form must contain labeled controls and a submit Button. Images describe placement and intent only and never contain URLs.
+Only Region may branch. Every branch must end in a concrete Text, Image, Link, Button, Input, Textarea, Select, or Checkbox leaf. Use actual labels, targets, image intent/alt text, form fields, options, helper copy, and consent links. Do not emit generic Item, Action, Title, Text, Image, Section, or placeholder-only content. Use semantic form only for an actual interactive form: it must contain at least one labeled Input, Textarea, Select, or Checkbox and exactly one submit Button, with no more than 16 direct children. A visual inquiry section without controls is a group, never a form. Use ordered-list or unordered-list only when every direct child is a list-item Region. Images describe placement and intent only and never contain URLs.
 
 Do not output HTML, CSS, classes, selectors, colors, dimensions, fonts, decoration, remote URLs, scripts, or vendor components. The renderer owns a fixed neutral wireframe decoration. Node IDs are internal lowercase kebab-case identifiers and must never be written into visible copy. Links must use a resolvable local #anchor or a site-relative /path. Keep claims, prices, hours, guarantees, legal statements, and contact constraints faithful to the source materials.
 PROMPT;
@@ -314,16 +314,37 @@ PROMPT;
         $id = ['type' => 'string', 'pattern' => '^[a-z0-9][a-z0-9-]*$', 'maxLength' => 100];
         $fieldName = ['type' => 'string', 'pattern' => '^[a-z][a-z0-9_-]*$', 'maxLength' => 100];
 
-        $definitions = [];
-        $definitions['region'] = $object([
+        $regionProperties = fn (array $semantics, array $children): array => [
             'type' => ['type' => 'string', 'const' => 'Region'],
             'id' => $id,
-            'semantic' => ['type' => 'string', 'enum' => self::regionSemantics()],
+            'semantic' => ['type' => 'string', 'enum' => $semantics],
             'layout' => ['type' => 'string', 'enum' => self::layouts()],
             'journey_stage' => ['type' => 'string', 'enum' => ['none', 'attention', 'interest', 'desire', 'memory', 'action']],
             'emphasis' => ['type' => 'string', 'enum' => ['neutral', 'supporting', 'standard', 'strong', 'primary']],
-            'children' => ['type' => 'array', 'minItems' => 1, 'maxItems' => 40, 'items' => ['$ref' => '#/$defs/node']],
-        ], ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
+            'children' => $children,
+        ];
+
+        $definitions = [];
+        $definitions['region'] = $object($regionProperties(
+            ['document', 'header', 'navigation', 'main', 'section', 'article', 'aside', 'footer', 'group'],
+            ['type' => 'array', 'minItems' => 1, 'maxItems' => 40, 'items' => ['$ref' => '#/$defs/node']],
+        ), ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
+        $definitions['listRegion'] = $object($regionProperties(
+            ['ordered-list', 'unordered-list'],
+            ['type' => 'array', 'minItems' => 1, 'maxItems' => 20, 'items' => ['$ref' => '#/$defs/listItemRegion']],
+        ), ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
+        $definitions['listItemRegion'] = $object($regionProperties(
+            ['list-item'],
+            ['type' => 'array', 'minItems' => 1, 'maxItems' => 12, 'items' => ['$ref' => '#/$defs/node']],
+        ), ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
+        $definitions['formRegion'] = $object($regionProperties(
+            ['form'],
+            ['type' => 'array', 'minItems' => 2, 'maxItems' => 16, 'items' => ['$ref' => '#/$defs/formNode']],
+        ), ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
+        $definitions['fieldGroupRegion'] = $object($regionProperties(
+            ['field-group', 'group'],
+            ['type' => 'array', 'minItems' => 1, 'maxItems' => 16, 'items' => ['$ref' => '#/$defs/formNode']],
+        ), ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
         $definitions['text'] = $object([
             'type' => ['type' => 'string', 'const' => 'Text'],
             'id' => $id,
@@ -345,6 +366,13 @@ PROMPT;
             'emphasis' => ['type' => 'string', 'enum' => ['plain', 'secondary', 'primary']],
         ], ['type', 'id', 'label', 'href', 'emphasis']);
         $definitions['button'] = $object([
+            'type' => ['type' => 'string', 'const' => 'Button'],
+            'id' => $id,
+            'label' => $text(300),
+            'button_type' => ['type' => 'string', 'const' => 'button'],
+            'emphasis' => ['type' => 'string', 'enum' => ['secondary', 'primary']],
+        ], ['type', 'id', 'label', 'button_type', 'emphasis']);
+        $definitions['formButton'] = $object([
             'type' => ['type' => 'string', 'const' => 'Button'],
             'id' => $id,
             'label' => $text(300),
@@ -391,7 +419,11 @@ PROMPT;
         ], ['type', 'id', 'label', 'name', 'value', 'required']);
         $definitions['node'] = ['anyOf' => array_map(
             fn (string $name): array => ['$ref' => "#/\$defs/{$name}"],
-            ['region', 'text', 'image', 'link', 'button', 'input', 'textarea', 'select', 'checkbox'],
+            ['region', 'listRegion', 'formRegion', 'text', 'image', 'link', 'button'],
+        )];
+        $definitions['formNode'] = ['anyOf' => array_map(
+            fn (string $name): array => ['$ref' => "#/\$defs/{$name}"],
+            ['fieldGroupRegion', 'text', 'image', 'link', 'formButton', 'input', 'textarea', 'select', 'checkbox'],
         )];
 
         return [
@@ -409,15 +441,6 @@ PROMPT;
                     'root' => ['$ref' => '#/$defs/region'],
                 ], ['key', 'path', 'title', 'root']),
             ],
-        ];
-    }
-
-    /** @return list<string> */
-    private static function regionSemantics(): array
-    {
-        return [
-            'document', 'header', 'navigation', 'main', 'section', 'article', 'aside', 'footer',
-            'group', 'ordered-list', 'unordered-list', 'list-item', 'form', 'field-group',
         ];
     }
 
