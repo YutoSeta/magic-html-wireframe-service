@@ -7,6 +7,8 @@ use Illuminate\Support\Str;
 
 final class WireframeMaterializer
 {
+    private const HANDOFF_PROFILE = 'styler-input-v1';
+
     public function __construct(
         private readonly WireframeValidator $validator,
         private readonly WireframeDecorateAst $decorateAst,
@@ -37,11 +39,20 @@ final class WireframeMaterializer
             ? hash('sha256', CanonicalJson::encode([
                 'wireframe_ast' => $normalized,
                 'wireframe_decorate_ast' => $decoration,
-                'renderer_version' => '2.1',
+                'renderer_version' => '2.2',
             ]))
             : hash('sha256', CanonicalJson::encode($normalized));
+        $handoffSourceDigest = $version === 2
+            ? hash('sha256', CanonicalJson::encode([
+                'wireframe_ast' => $normalized,
+                'handoff_profile' => self::HANDOFF_PROFILE,
+                'renderer_version' => '1.0',
+            ]))
+            : null;
         $files = [];
         $fileManifest = [];
+        $handoffFiles = [];
+        $handoffFileManifest = [];
         $usedPaths = [];
         $renderPaths = [];
         $routeToFile = [];
@@ -58,7 +69,7 @@ final class WireframeMaterializer
             $pageKey = (string) $page['key'];
             $path = $renderPaths[$pageKey];
             $content = $version === 2
-                ? $this->htmlV2($page, (string) $normalized['locale'], $sourceDigest, $routeToFile)
+                ? $this->htmlV2Preview($page, (string) $normalized['locale'], $sourceDigest, $routeToFile)
                 : $this->htmlV1($page, $sourceDigest);
             $files[] = [
                 'path' => $path,
@@ -71,6 +82,25 @@ final class WireframeMaterializer
                 'size' => strlen($content),
                 'sha256' => hash('sha256', $content),
             ];
+            if ($version === 2 && is_string($handoffSourceDigest)) {
+                $handoffContent = $this->htmlV2Handoff(
+                    $page,
+                    (string) $normalized['locale'],
+                    $handoffSourceDigest,
+                    $routeToFile,
+                );
+                $handoffFiles[] = [
+                    'path' => $path,
+                    'mime' => 'text/html; charset=UTF-8',
+                    'content_base64' => base64_encode($handoffContent),
+                ];
+                $handoffFileManifest[] = [
+                    'page_key' => $pageKey,
+                    'path' => $path,
+                    'size' => strlen($handoffContent),
+                    'sha256' => hash('sha256', $handoffContent),
+                ];
+            }
         }
 
         return [
@@ -79,10 +109,17 @@ final class WireframeMaterializer
             'files' => $files,
             'file_manifest' => $fileManifest,
             ...($decoration !== null ? ['wireframe_decorate_ast' => $decoration] : []),
+            ...($handoffSourceDigest !== null ? ['handoff' => [
+                'profile' => self::HANDOFF_PROFILE,
+                'source_digest' => $handoffSourceDigest,
+                'entry_path' => $handoffFiles[0]['path'],
+                'files' => $handoffFiles,
+                'file_manifest' => $handoffFileManifest,
+            ]] : []),
             'telemetry' => [
                 'operation' => 'wireframes.materialize',
                 'renderer' => $version === 2 ? 'semantic-wireframe-html' : 'neutral-layout-html',
-                'renderer_version' => $version === 2 ? '2.1' : '1.0',
+                'renderer_version' => $version === 2 ? '2.2' : '1.0',
                 'provider' => 'deterministic',
                 'model' => null,
                 'response_id' => null,
@@ -180,7 +217,7 @@ HTML;
     }
 
     /** @param array<string,mixed> $page */
-    private function htmlV2(array $page, string $locale, string $sourceDigest, array $routeToFile): string
+    private function htmlV2Preview(array $page, string $locale, string $sourceDigest, array $routeToFile): string
     {
         $lang = $this->escape($locale);
         $title = $this->escape((string) $page['title']);
@@ -197,9 +234,34 @@ HTML;
 <meta name="wireframe-source-sha256" content="{$sourceDigest}">
 <meta name="wireframe-decoration-profile" content="wireframe-neutral-v1">
 <title>{$title}</title>
-<style>
+<style data-wireframe-presentation="wireframe-neutral-v1">
 {$css}
 </style>
+</head>
+<body>
+{$body}
+</body>
+</html>
+HTML;
+    }
+
+    /** @param array<string,mixed> $page */
+    private function htmlV2Handoff(array $page, string $locale, string $sourceDigest, array $routeToFile): string
+    {
+        $lang = $this->escape($locale);
+        $title = $this->escape((string) $page['title']);
+        $body = $this->node($page['root'], $routeToFile);
+
+        return <<<HTML
+<!doctype html>
+<html lang="{$lang}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'none'; img-src 'none'; font-src 'none'; connect-src 'none'; script-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="wireframe-source-sha256" content="{$sourceDigest}">
+<meta name="wireframe-handoff-profile" content="styler-input-v1">
+<title>{$title}</title>
 </head>
 <body>
 {$body}
