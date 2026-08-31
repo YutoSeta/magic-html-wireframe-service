@@ -168,7 +168,9 @@ final class MaterializeWireframeControllerTest extends TestCase
             ->assertJsonPath('wireframe_decorate_ast.surfaces.image', '#d1d5db')
             ->assertJsonPath('wireframe_decorate_ast.borders.leaf.width_px', 0)
             ->assertJsonPath('telemetry.renderer', 'semantic-wireframe-html')
-            ->assertJsonPath('telemetry.renderer_version', '2.1');
+            ->assertJsonPath('handoff.profile', 'styler-input-v1')
+            ->assertJsonPath('handoff.entry_path', 'page-home.html')
+            ->assertJsonPath('telemetry.renderer_version', '2.2');
 
         $html = base64_decode($response->json('files.0.content_base64'), true);
         $this->assertIsString($html);
@@ -187,6 +189,7 @@ final class MaterializeWireframeControllerTest extends TestCase
         $this->assertStringNotContainsString('<安心>', $html);
         $this->assertStringContainsString('<figure id="hero-image"', $html);
         $this->assertStringContainsString('background:#d1d5db', $html);
+        $this->assertStringContainsString('data-wireframe-presentation="wireframe-neutral-v1"', $html);
         $this->assertStringContainsString('background:transparent', $html);
         $this->assertStringContainsString('margin:2px;padding:6px', $html);
         $this->assertStringContainsString('background:#171717;color:#fff', $html);
@@ -215,6 +218,21 @@ final class MaterializeWireframeControllerTest extends TestCase
         $this->assertStringNotContainsString('box-shadow', $html);
         $this->assertStringNotContainsString('border-radius', $html);
         $this->assertStringNotContainsString('animation', $html);
+
+        $handoffHtml = base64_decode($response->json('handoff.files.0.content_base64'), true);
+        $this->assertIsString($handoffHtml);
+        $this->assertStringContainsString('<meta name="wireframe-handoff-profile" content="styler-input-v1">', $handoffHtml);
+        $this->assertStringContainsString('data-wf-semantic="section"', $handoffHtml);
+        $this->assertStringContainsString('m-form="free-consultation"', $handoffHtml);
+        $this->assertStringNotContainsString('<style', $handoffHtml);
+        $this->assertStringNotContainsString('wireframe-decoration-profile', $handoffHtml);
+        $this->assertStringNotContainsString('wireframe-neutral-v1', $handoffHtml);
+        $this->assertStringNotContainsString('background:#d1d5db', $handoffHtml);
+        $this->assertSame(
+            hash('sha256', $handoffHtml),
+            $response->json('handoff.file_manifest.0.sha256'),
+        );
+        $this->assertNotSame($response->json('source_digest'), $response->json('handoff.source_digest'));
         Http::assertNothingSent();
     }
 
@@ -237,6 +255,7 @@ final class MaterializeWireframeControllerTest extends TestCase
         $this->assertSame($first->json('source_digest'), $second->json('source_digest'));
         $this->assertSame($first->json('files'), $second->json('files'));
         $this->assertSame($first->json('wireframe_decorate_ast'), $second->json('wireframe_decorate_ast'));
+        $this->assertSame($first->json('handoff'), $second->json('handoff'));
     }
 
     public function test_v2_rejects_unknown_leaf_fields_and_form_controls_outside_a_form(): void

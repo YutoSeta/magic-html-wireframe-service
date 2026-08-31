@@ -23,6 +23,9 @@ final class MaterializedWireframeResource extends JsonResource
             ...(isset($this->resource['wireframe_decorate_ast'])
                 ? ['wireframe_decorate_ast' => $this->resource['wireframe_decorate_ast']]
                 : []),
+            ...(isset($this->resource['handoff'])
+                ? ['handoff' => $this->resource['handoff']]
+                : []),
             'telemetry' => $this->resource['telemetry'],
         ];
     }
