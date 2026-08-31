@@ -43,6 +43,9 @@ final class WireframeJobStore
                 'id' => $id,
                 'status' => 'queued',
                 'progress' => 0.0,
+                'semantic_attempt' => 1,
+                'attempt_telemetry' => [],
+                'provider_completion_claimed' => false,
                 'created_at' => $now,
                 'updated_at' => $now,
                 'context_encrypted' => $this->encrypt($payload),
@@ -62,7 +65,7 @@ final class WireframeJobStore
         return $record === null ? null : $this->publicRecord($record);
     }
 
-    /** @return array{payload:array<string,mixed>,provider_response_id:string}|null */
+    /** @return array{payload:array<string,mixed>,provider_response_id:string,semantic_attempt:int}|null */
     public function providerContext(string $id): ?array
     {
         $record = $this->internal($id);
@@ -73,7 +76,11 @@ final class WireframeJobStore
         }
         $payload = $this->decrypt($record['context_encrypted']);
 
-        return ['payload' => $payload, 'provider_response_id' => $record['provider_response_id']];
+        return [
+            'payload' => $payload,
+            'provider_response_id' => $record['provider_response_id'],
+            'semantic_attempt' => max(1, (int) ($record['semantic_attempt'] ?? 1)),
+        ];
     }
 
     /** @return array<string,mixed> */
@@ -83,6 +90,7 @@ final class WireframeJobStore
             'status' => $providerStatus === 'completed' ? 'in_progress' : $providerStatus,
             'progress' => $providerStatus === 'queued' ? 0.05 : 0.1,
             'provider_response_id' => $providerResponseId,
+            'provider_completion_claimed' => false,
         ]);
     }
 
@@ -95,9 +103,77 @@ final class WireframeJobStore
         ]);
     }
 
+    public function claimSemanticRetry(string $id, string $providerResponseId, int $semanticAttempt): bool
+    {
+        return $this->cache->lock("wireframe-job-update:{$id}", 10)->block(5, function () use ($id, $providerResponseId, $semanticAttempt): bool {
+            $record = $this->internal($id);
+            if ($record === null
+                || (string) ($record['provider_response_id'] ?? '') !== $providerResponseId
+                || (int) ($record['semantic_attempt'] ?? 1) !== $semanticAttempt
+                || ($record['provider_completion_claimed'] ?? null) !== true) {
+                return false;
+            }
+            $record = array_replace($record, [
+                'status' => 'in_progress',
+                'progress' => 0.5,
+                'semantic_attempt' => $semanticAttempt + 1,
+                'provider_response_id' => null,
+                'provider_completion_claimed' => false,
+                'updated_at' => now()->toIso8601String(),
+            ]);
+            $this->write($record);
+
+            return true;
+        });
+    }
+
+    public function claimProviderCompletion(string $id, string $providerResponseId, int $semanticAttempt): bool
+    {
+        return $this->cache->lock("wireframe-job-update:{$id}", 10)->block(5, function () use ($id, $providerResponseId, $semanticAttempt): bool {
+            $record = $this->internal($id);
+            if ($record === null
+                || (string) ($record['provider_response_id'] ?? '') !== $providerResponseId
+                || (int) ($record['semantic_attempt'] ?? 1) !== $semanticAttempt
+                || ($record['provider_completion_claimed'] ?? false) === true) {
+                return false;
+            }
+            $record['provider_completion_claimed'] = true;
+            $record['updated_at'] = now()->toIso8601String();
+            $this->write($record);
+
+            return true;
+        });
+    }
+
+    /** @param array<string,mixed> $telemetry */
+    public function recordAttemptTelemetry(string $id, array $telemetry): void
+    {
+        $this->cache->lock("wireframe-job-update:{$id}", 10)->block(5, function () use ($id, $telemetry): void {
+            $record = $this->internal($id);
+            if ($record === null) {
+                throw new RuntimeException('The wireframe job does not exist or has expired.');
+            }
+            $attempts = is_array($record['attempt_telemetry'] ?? null) ? $record['attempt_telemetry'] : [];
+            $attempts[] = $telemetry;
+            $record['attempt_telemetry'] = $attempts;
+            $record['updated_at'] = now()->toIso8601String();
+            $this->write($record);
+        });
+    }
+
     /** @param array<string,mixed> $result @return array<string,mixed> */
     public function succeeded(string $id, array $result): array
     {
+        $record = $this->internal($id);
+        if ($record === null) {
+            throw new RuntimeException('The wireframe job does not exist or has expired.');
+        }
+        $attempts = is_array($record['attempt_telemetry'] ?? null) ? $record['attempt_telemetry'] : [];
+        if (is_array($result['telemetry'] ?? null)) {
+            $attempts[] = $result['telemetry'];
+            $result['telemetry'] = $this->aggregateTelemetry($attempts);
+        }
+
         return $this->update($id, [
             'status' => 'succeeded',
             'progress' => 1.0,
@@ -109,10 +185,14 @@ final class WireframeJobStore
     /** @return array<string,mixed> */
     public function failed(string $id, string $type, string $detail): array
     {
+        $record = $this->internal($id);
+        $attempts = is_array($record['attempt_telemetry'] ?? null) ? $record['attempt_telemetry'] : [];
+
         return $this->update($id, [
             'status' => 'failed',
             'progress' => 1.0,
             'failure' => ['type' => $type, 'detail' => $detail],
+            'telemetry' => $attempts === [] ? null : $this->aggregateTelemetry($attempts),
         ]);
     }
 
@@ -145,7 +225,7 @@ final class WireframeJobStore
     /** @param array<string,mixed> $record @return array<string,mixed> */
     private function publicRecord(array $record): array
     {
-        $public = array_diff_key($record, array_flip(['context_encrypted', 'provider_response_id', 'result_encrypted']));
+        $public = array_diff_key($record, array_flip(['attempt_telemetry', 'context_encrypted', 'provider_completion_claimed', 'provider_response_id', 'result_encrypted']));
         if (is_string($record['result_encrypted'] ?? null)) {
             $public['result'] = $this->decrypt($record['result_encrypted']);
         }
@@ -189,5 +269,26 @@ final class WireframeJobStore
     private function expiresAt(): Carbon
     {
         return now()->addSeconds(max(600, (int) config('wireframe.jobs.ttl_seconds', 86400)));
+    }
+
+    /** @param list<array<string,mixed>> $attempts @return array<string,mixed> */
+    private function aggregateTelemetry(array $attempts): array
+    {
+        $last = $attempts[array_key_last($attempts)] ?? [];
+        $aggregate = $last;
+        foreach (['input_tokens', 'cached_input_tokens', 'output_tokens', 'reasoning_tokens', 'provider_request_count', 'semantic_attempt_count', 'retry_count', 'provider_duration_ms'] as $field) {
+            $values = array_column($attempts, $field);
+            $aggregate[$field] = count($values) === count($attempts)
+                && collect($values)->every(static fn (mixed $value): bool => is_int($value))
+                    ? array_sum($values)
+                    : null;
+        }
+        $costs = array_column($attempts, 'estimated_cost');
+        $aggregate['estimated_cost'] = count($costs) === count($attempts)
+            && collect($costs)->every(static fn (mixed $value): bool => is_int($value) || is_float($value))
+                ? array_sum($costs)
+                : null;
+
+        return $aggregate;
     }
 }

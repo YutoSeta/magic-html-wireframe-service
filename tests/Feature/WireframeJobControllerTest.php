@@ -172,6 +172,93 @@ final class WireframeJobControllerTest extends TestCase
             ->assertJsonPath('status', 'succeeded');
     }
 
+    public function test_invalid_semantic_result_starts_one_bounded_background_repair_and_aggregates_usage(): void
+    {
+        $invalidDocument = WireframeV2Fixture::document();
+        $invalidDocument['pages'][0]['title'] = 'Site ASTと一致しないタイトル';
+        Http::fake([
+            'https://api.openai.test/v1/responses' => Http::sequence()
+                ->push(['id' => 'resp_background_invalid', 'status' => 'queued'])
+                ->push(['id' => 'resp_background_repair', 'status' => 'queued']),
+            'https://api.openai.test/v1/responses/resp_background_invalid' => Http::response(
+                $this->completedProviderResponse('resp_background_invalid', $invalidDocument),
+            ),
+            'https://api.openai.test/v1/responses/resp_background_repair' => Http::response(
+                $this->completedProviderResponse('resp_background_repair'),
+            ),
+        ]);
+
+        $started = $this->withToken('test-token')
+            ->withHeader('Idempotency-Key', 'background-wireframe-repair-0001')
+            ->postJson('/api/v1/wireframe-jobs', $this->payload())
+            ->assertAccepted();
+        $path = '/api/v1/wireframe-jobs/'.$started->json('id');
+
+        $this->withToken('test-token')
+            ->getJson($path)
+            ->assertOk()
+            ->assertJsonPath('status', 'queued')
+            ->assertJsonPath('semantic_attempt', 2)
+            ->assertJsonMissingPath('telemetry');
+
+        $this->withToken('test-token')
+            ->getJson($path)
+            ->assertOk()
+            ->assertJsonPath('status', 'succeeded')
+            ->assertJsonPath('semantic_attempt', 2)
+            ->assertJsonPath('result.telemetry.response_id', 'resp_background_repair')
+            ->assertJsonPath('result.telemetry.input_tokens', 2400)
+            ->assertJsonPath('result.telemetry.cached_input_tokens', 400)
+            ->assertJsonPath('result.telemetry.output_tokens', 1800)
+            ->assertJsonPath('result.telemetry.reasoning_tokens', 200)
+            ->assertJsonPath('result.telemetry.provider_request_count', 2)
+            ->assertJsonPath('result.telemetry.semantic_attempt_count', 2);
+
+        Http::assertSent(function ($request): bool {
+            if ($request->url() !== 'https://api.openai.test/v1/responses' || $request->method() !== 'POST') {
+                return false;
+            }
+            $input = json_decode((string) $request['input'], true);
+
+            return ($input['validation_feedback'] ?? null) === 'Wireframe page titles must match the Site AST.';
+        });
+        Http::assertSentCount(4);
+    }
+
+    public function test_second_invalid_semantic_result_fails_without_starting_an_unbounded_retry(): void
+    {
+        $invalidDocument = WireframeV2Fixture::document();
+        $invalidDocument['pages'][0]['title'] = 'Site ASTと一致しないタイトル';
+        Http::fake([
+            'https://api.openai.test/v1/responses' => Http::sequence()
+                ->push(['id' => 'resp_background_invalid_1', 'status' => 'queued'])
+                ->push(['id' => 'resp_background_invalid_2', 'status' => 'queued']),
+            'https://api.openai.test/v1/responses/resp_background_invalid_1' => Http::response(
+                $this->completedProviderResponse('resp_background_invalid_1', $invalidDocument),
+            ),
+            'https://api.openai.test/v1/responses/resp_background_invalid_2' => Http::response(
+                $this->completedProviderResponse('resp_background_invalid_2', $invalidDocument),
+            ),
+        ]);
+
+        $started = $this->withToken('test-token')
+            ->withHeader('Idempotency-Key', 'background-wireframe-invalid-twice-0001')
+            ->postJson('/api/v1/wireframe-jobs', $this->payload())
+            ->assertAccepted();
+        $path = '/api/v1/wireframe-jobs/'.$started->json('id');
+        $this->withToken('test-token')->getJson($path)->assertOk()->assertJsonPath('semantic_attempt', 2);
+
+        $this->withToken('test-token')
+            ->getJson($path)
+            ->assertOk()
+            ->assertJsonPath('status', 'failed')
+            ->assertJsonPath('failure.type', 'invalid_wireframe')
+            ->assertJsonPath('telemetry.input_tokens', 2400)
+            ->assertJsonPath('telemetry.semantic_attempt_count', 2);
+
+        Http::assertSentCount(4);
+    }
+
     public function test_job_routes_require_authentication_and_a_valid_request(): void
     {
         $this->postJson('/api/v1/wireframe-jobs', $this->payload())->assertUnauthorized();
@@ -208,13 +295,13 @@ final class WireframeJobControllerTest extends TestCase
     }
 
     /** @return array<string,mixed> */
-    private function completedProviderResponse(string $id = 'resp_background_1'): array
+    private function completedProviderResponse(string $id = 'resp_background_1', ?array $document = null): array
     {
         return [
             'id' => $id,
             'status' => 'completed',
             'model' => 'gpt-5.6',
-            'output_text' => json_encode(WireframeV2Fixture::document(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
+            'output_text' => json_encode($document ?? WireframeV2Fixture::document(), JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
             'usage' => [
                 'input_tokens' => 1200,
                 'input_tokens_details' => ['cached_tokens' => 200],

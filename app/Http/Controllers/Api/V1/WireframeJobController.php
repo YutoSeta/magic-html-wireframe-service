@@ -65,12 +65,17 @@ final class WireframeJobController extends Controller
             return Problem::response($request, 503, 'job_store_unavailable', 'The wireframe job context is unavailable.');
         }
 
+        $completionClaimed = false;
         try {
             $providerResponse = $generator->retrieveBackground($context['provider_response_id']);
             $providerStatus = (string) $providerResponse['status'];
             if (in_array($providerStatus, ['queued', 'in_progress'], true)) {
                 $record = $jobs->pending($job, $providerStatus);
             } elseif ($providerStatus === 'completed') {
+                if (! $jobs->claimProviderCompletion($job, $context['provider_response_id'], $context['semantic_attempt'])) {
+                    return response()->json($jobs->find($job), headers: ['Cache-Control' => 'private, no-store']);
+                }
+                $completionClaimed = true;
                 $payload = $context['payload'];
                 $completed = $generator->completeBackground(
                     $providerResponse,
@@ -85,9 +90,40 @@ final class WireframeJobController extends Controller
             } else {
                 $record = $jobs->failed($job, 'wireframe_generation_failed', 'The background wireframe generation reached a terminal provider state without a valid result.');
             }
-        } catch (InvalidWireframeException) {
-            $record = $jobs->failed($job, 'invalid_wireframe', 'The generated Wireframe AST did not satisfy the deterministic contract.');
+        } catch (InvalidWireframeException $exception) {
+            if ($context['semantic_attempt'] < 2) {
+                if (! $jobs->claimSemanticRetry($job, $context['provider_response_id'], $context['semantic_attempt'])) {
+                    return response()->json($jobs->find($job), headers: ['Cache-Control' => 'private, no-store']);
+                }
+                $jobs->recordAttemptTelemetry($job, $generator->backgroundTelemetry($providerResponse));
+                try {
+                    $payload = $context['payload'];
+                    $providerResponse = $generator->startBackground(
+                        $payload['site_ast'],
+                        $payload['brief'],
+                        (string) $payload['locale'],
+                        (int) $payload['wireframe_ast_version'],
+                        $exception->getMessage(),
+                    );
+                    $record = $jobs->started(
+                        $job,
+                        (string) $providerResponse['id'],
+                        (string) $providerResponse['status'],
+                    );
+                } catch (RuntimeException) {
+                    $record = $jobs->failed($job, 'wireframe_provider_failed', 'The background wireframe repair could not be started.');
+                }
+            } else {
+                $jobs->recordAttemptTelemetry($job, $generator->backgroundTelemetry($providerResponse));
+                $record = $jobs->failed($job, 'invalid_wireframe', 'The generated Wireframe AST did not satisfy the deterministic contract after two semantic attempts.');
+            }
         } catch (RuntimeException $exception) {
+            if ($completionClaimed) {
+                $record = $jobs->failed($job, 'invalid_provider_response', 'The completed wireframe provider response could not be processed.');
+
+                return response()->json($record, headers: ['Cache-Control' => 'private, no-store']);
+            }
+
             return Problem::response($request, 502, 'wireframe_provider_failed', $exception->getMessage());
         }
 
