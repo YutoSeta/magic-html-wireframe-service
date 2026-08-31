@@ -27,7 +27,7 @@ final class WireframeDecorateAst
             'borders' => [
                 'region' => ['width_px' => 1, 'style' => 'solid', 'color' => '#737373'],
                 'container' => ['width_px' => 1, 'style' => 'dashed', 'color' => '#a3a3a3'],
-                'leaf' => ['width_px' => 1, 'style' => 'solid', 'color' => '#d4d4d4'],
+                'leaf' => ['width_px' => 0, 'style' => 'none', 'color' => '#d4d4d4'],
                 'primary_action' => ['width_px' => 2, 'style' => 'solid', 'color' => '#171717'],
             ],
             'surfaces' => [
@@ -68,7 +68,7 @@ CSS;
 
         // Keep the neutral renderer compact and make typed leaves unambiguous.
         return $css.<<<CSS
-[data-wf-node]{max-width:100%;word-break:break-all}.wf-image,.wf-image span,.wf-image figcaption{max-width:100%;word-break:break-all}.wf-button{background:{$surfaces['button']};color:#fff;border:1px solid {$surfaces['button']};text-decoration:none}.wf-button[data-emphasis="primary"]{background:{$surfaces['button']};color:#fff;border-color:{$surfaces['button']}}.wf-link{color:{$definition['link']['color']};text-decoration:{$definition['link']['text_decoration']};background:transparent}.wf-link[data-emphasis="primary"]{background:{$surfaces['button']};color:#fff;border-color:{$surfaces['button']};text-decoration:none}.wf-field input:not([type="checkbox"]):not([type="radio"]),.wf-field textarea,.wf-field select{background:{$surfaces['input']};max-width:100%;word-break:break-all}.wf-field textarea{overflow-wrap:anywhere}.wf-layout-stack{gap:10px}.wf-layout-cluster{gap:10px}.wf-layout-grid-2,.wf-layout-grid-3,.wf-layout-grid-4,.wf-layout-split,.wf-layout-split-wide-start,.wf-layout-split-wide-end{gap:14px}.wf-layout-centered{gap:14px}ol[data-wf-node],ul[data-wf-node]{padding-left:22px}@media(max-width:{$responsive['breakpoint_px']}px){[data-wf-semantic="section"]{padding:{$spacing['section_padding_mobile_px']}px 10px}.wf-layout-stack{gap:8px}.wf-layout-grid-2,.wf-layout-grid-3,.wf-layout-grid-4,.wf-layout-split,.wf-layout-split-wide-start,.wf-layout-split-wide-end{gap:10px}.wf-image{min-height:140px}}
+[data-wf-node]{max-width:100%;word-break:break-all}.wf-image,.wf-image span,.wf-image figcaption{max-width:100%;word-break:break-all}.wf-button{background:{$surfaces['button']};color:#fff;border:0;text-decoration:none}.wf-button[data-emphasis="primary"]{background:{$surfaces['button']};color:#fff;border:0}.wf-link{color:{$definition['link']['color']};text-decoration:{$definition['link']['text_decoration']};background:transparent}.wf-link[data-emphasis="primary"]{background:{$surfaces['button']};color:#fff;border:0;text-decoration:none}.wf-field input:not([type="checkbox"]):not([type="radio"]),.wf-field textarea,.wf-field select{background:{$surfaces['input']};max-width:100%;word-break:break-all;border:1px solid #a3a3a3}.wf-field textarea{overflow-wrap:anywhere}.wf-layout-stack{gap:10px}.wf-layout-cluster{gap:10px}.wf-layout-grid-2,.wf-layout-grid-3,.wf-layout-grid-4,.wf-layout-split,.wf-layout-split-wide-start,.wf-layout-split-wide-end{gap:14px}.wf-layout-centered{gap:14px}ol[data-wf-node],ul[data-wf-node]{padding-left:22px}@media(max-width:{$responsive['breakpoint_px']}px){[data-wf-semantic="section"]{padding:{$spacing['section_padding_mobile_px']}px 10px}.wf-layout-stack{gap:8px}.wf-layout-grid-2,.wf-layout-grid-3,.wf-layout-grid-4,.wf-layout-split,.wf-layout-split-wide-start,.wf-layout-split-wide-end{gap:10px}.wf-image{min-height:140px}}
 CSS;
     }
 }

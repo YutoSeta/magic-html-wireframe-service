@@ -166,6 +166,7 @@ final class MaterializeWireframeControllerTest extends TestCase
             ->assertJsonPath('wireframe_decorate_ast.canvas.background', '#ffffff')
             ->assertJsonPath('wireframe_decorate_ast.surfaces.container', 'transparent')
             ->assertJsonPath('wireframe_decorate_ast.surfaces.image', '#d1d5db')
+            ->assertJsonPath('wireframe_decorate_ast.borders.leaf.width_px', 0)
             ->assertJsonPath('telemetry.renderer', 'semantic-wireframe-html')
             ->assertJsonPath('telemetry.renderer_version', '2.0');
 
@@ -182,8 +183,9 @@ final class MaterializeWireframeControllerTest extends TestCase
         $this->assertStringContainsString('margin:2px;padding:6px', $html);
         $this->assertStringContainsString('background:#171717;color:#fff', $html);
         $this->assertStringContainsString('color:#172554;text-decoration:underline', $html);
-        $this->assertStringContainsString('background:#171717;color:#fff;border-color:#171717;text-decoration:none', $html);
+        $this->assertStringContainsString('background:#171717;color:#fff;border:0;text-decoration:none', $html);
         $this->assertStringContainsString('background:#f3f4f6', $html);
+        $this->assertStringContainsString('border:1px solid #a3a3a3', $html);
         $this->assertStringContainsString('word-break:break-all', $html);
         $this->assertStringContainsString('<a id="hero-action"', $html);
         $this->assertStringContainsString('href="page-privacy.html"', $html);
