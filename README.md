@@ -39,7 +39,7 @@ The idempotency store persists only the SHA-256 request digest. Content-free v1 
 
 - white canvas and transparent structural regions
 - gray image placeholders
-- solid region/leaf borders and dashed nested-container borders
+- solid region borders and dashed nested-container borders; atomic leaves remain borderless
 - fixed minimum margin, padding, and action height
 - compact horizontal spacing for nested regions and grids
 - black background with white text for Button and primary action-link leaves
