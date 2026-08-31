@@ -208,8 +208,12 @@ final class OpenAiWireframeGeneratorTest extends TestCase
                 && str_contains($instructions, 'AIDMA')
                 && str_contains($instructions, 'content-free')
                 && str_contains($instructions, 'Input, Textarea, Select, or Checkbox')
+                && ($schema['properties']['version']['type'] ?? null) === 'integer'
                 && ($schema['properties']['version']['const'] ?? null) === 2
                 && ($schema['properties']['pages']['maxItems'] ?? null) === 8
+                && ($schema['$defs']['region']['properties']['type']['type'] ?? null) === 'string'
+                && ($schema['$defs']['region']['properties']['type']['const'] ?? null) === 'Region'
+                && ($schema['$defs']['checkbox']['properties']['type']['type'] ?? null) === 'string'
                 && ($schema['$defs']['region']['properties']['children']['items']['$ref'] ?? null) === '#/$defs/node'
                 && count($schema['$defs']['node']['anyOf'] ?? []) === 9
                 && ($body['max_output_tokens'] ?? null) === 64000
