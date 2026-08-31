@@ -179,7 +179,12 @@ final class MaterializeWireframeControllerTest extends TestCase
         $this->assertStringContainsString('<figure id="hero-image"', $html);
         $this->assertStringContainsString('background:#d1d5db', $html);
         $this->assertStringContainsString('background:transparent', $html);
-        $this->assertStringContainsString('margin:4px;padding:8px', $html);
+        $this->assertStringContainsString('margin:2px;padding:6px', $html);
+        $this->assertStringContainsString('background:#171717;color:#fff', $html);
+        $this->assertStringContainsString('color:#172554;text-decoration:underline', $html);
+        $this->assertStringContainsString('background:#171717;color:#fff;border-color:#171717;text-decoration:none', $html);
+        $this->assertStringContainsString('background:#f3f4f6', $html);
+        $this->assertStringContainsString('word-break:break-all', $html);
         $this->assertStringContainsString('<a id="hero-action"', $html);
         $this->assertStringContainsString('href="page-privacy.html"', $html);
         $this->assertStringContainsString('href="page-legal.html"', $html);
