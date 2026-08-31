@@ -37,7 +37,7 @@ final class WireframeMaterializer
             ? hash('sha256', CanonicalJson::encode([
                 'wireframe_ast' => $normalized,
                 'wireframe_decorate_ast' => $decoration,
-                'renderer_version' => '2.0',
+                'renderer_version' => '2.1',
             ]))
             : hash('sha256', CanonicalJson::encode($normalized));
         $files = [];
@@ -82,7 +82,7 @@ final class WireframeMaterializer
             'telemetry' => [
                 'operation' => 'wireframes.materialize',
                 'renderer' => $version === 2 ? 'semantic-wireframe-html' : 'neutral-layout-html',
-                'renderer_version' => $version === 2 ? '2.0' : '1.0',
+                'renderer_version' => $version === 2 ? '2.1' : '1.0',
                 'provider' => 'deterministic',
                 'model' => null,
                 'response_id' => null,
@@ -248,10 +248,15 @@ HTML;
         $layout = $this->escape((string) $node['layout']);
         $stage = $this->escape((string) $node['journey_stage']);
         $emphasis = $this->escape((string) $node['emphasis']);
+        $magicHtmlRole = $this->regionMagicHtmlRole($semantic);
+        $magicHtmlAttributes = " data-mh-role=\"{$magicHtmlRole}\"";
+        if ($semantic === 'section') {
+            $magicHtmlAttributes .= " data-mh-composition=\"{$id}\"";
+        }
         $children = implode("\n", array_map(fn (array $child): string => $this->node($child, $routeToFile), $node['children']));
         $formAttribute = $semantic === 'form' ? " m-form=\"{$id}\"" : '';
 
-        return "<{$tag} id=\"{$id}\" class=\"wf-layout-{$layout}\" data-wf-node data-wf-kind=\"region\" data-wf-semantic=\"{$semantic}\" data-wf-stage=\"{$stage}\" data-wf-emphasis=\"{$emphasis}\"{$formAttribute}>\n{$children}\n</{$tag}>";
+        return "<{$tag} id=\"{$id}\" class=\"wf-layout-{$layout}\" data-wf-node data-wf-kind=\"region\" data-wf-semantic=\"{$semantic}\" data-wf-stage=\"{$stage}\" data-wf-emphasis=\"{$emphasis}\"{$magicHtmlAttributes}{$formAttribute}>\n{$children}\n</{$tag}>";
     }
 
     /** @param array<string,mixed> $node */
@@ -267,8 +272,9 @@ HTML;
         $id = $this->escape((string) $node['id']);
         $role = $this->escape((string) $node['role']);
         $content = $this->escape((string) $node['content']);
+        $magicHtmlRole = $this->textMagicHtmlRole((string) $node['role']);
 
-        return "<{$tag} id=\"{$id}\" class=\"wf-text-{$role}\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Text\">{$content}</{$tag}>";
+        return "<{$tag} id=\"{$id}\" class=\"wf-text-{$role}\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Text\" data-mh-role=\"{$magicHtmlRole}\">{$content}</{$tag}>";
     }
 
     /** @param array<string,mixed> $node */
@@ -281,7 +287,7 @@ HTML;
             ? '<figcaption>'.$this->escape((string) $node['caption']).'</figcaption>'
             : '';
 
-        return "<figure id=\"{$id}\" class=\"wf-image\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Image\" data-aspect=\"{$aspect}\" role=\"img\" aria-label=\"{$alt}\"><span>{$alt}</span>{$caption}</figure>";
+        return "<figure id=\"{$id}\" class=\"wf-image\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Image\" data-aspect=\"{$aspect}\" data-mh-role=\"Image\" role=\"img\" aria-label=\"{$alt}\"><span>{$alt}</span>{$caption}</figure>";
     }
 
     /** @param array<string,mixed> $node */
@@ -299,7 +305,7 @@ HTML;
         $href = $this->escape($href);
         $emphasis = $this->escape((string) $node['emphasis']);
 
-        return "<a id=\"{$id}\" class=\"wf-link\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Link\" data-emphasis=\"{$emphasis}\" href=\"{$href}\">{$label}</a>";
+        return "<a id=\"{$id}\" class=\"wf-link\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Link\" data-emphasis=\"{$emphasis}\" data-mh-role=\"Link\" href=\"{$href}\">{$label}</a>";
     }
 
     /** @param array<string,mixed> $node */
@@ -310,7 +316,7 @@ HTML;
         $type = $this->escape((string) $node['button_type']);
         $emphasis = $this->escape((string) $node['emphasis']);
 
-        return "<button id=\"{$id}\" class=\"wf-button\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Button\" data-emphasis=\"{$emphasis}\" type=\"{$type}\">{$label}</button>";
+        return "<button id=\"{$id}\" class=\"wf-button\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Button\" data-emphasis=\"{$emphasis}\" data-mh-role=\"Btn\" type=\"{$type}\">{$label}</button>";
     }
 
     /** @param array<string,mixed> $node */
@@ -323,7 +329,7 @@ HTML;
         $placeholder = $this->placeholder($node['placeholder']);
         $required = $node['required'] ? ' required' : '';
 
-        return "<label id=\"{$id}\" class=\"wf-field\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Input\"><span>{$label}</span><input type=\"{$type}\" name=\"{$name}\" m-field=\"{$name}\"{$placeholder}{$required}></label>";
+        return "<label id=\"{$id}\" class=\"wf-field\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Input\" data-mh-role=\"Input\"><span>{$label}</span><input type=\"{$type}\" name=\"{$name}\" m-field=\"{$name}\"{$placeholder}{$required}></label>";
     }
 
     /** @param array<string,mixed> $node */
@@ -335,7 +341,7 @@ HTML;
         $placeholder = $this->placeholder($node['placeholder']);
         $required = $node['required'] ? ' required' : '';
 
-        return "<label id=\"{$id}\" class=\"wf-field\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Textarea\"><span>{$label}</span><textarea name=\"{$name}\" m-field=\"{$name}\"{$placeholder}{$required}></textarea></label>";
+        return "<label id=\"{$id}\" class=\"wf-field\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Textarea\" data-mh-role=\"Input\"><span>{$label}</span><textarea name=\"{$name}\" m-field=\"{$name}\"{$placeholder}{$required}></textarea></label>";
     }
 
     /** @param array<string,mixed> $node */
@@ -353,7 +359,7 @@ HTML;
             $node['options'],
         ));
 
-        return "<label id=\"{$id}\" class=\"wf-field\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Select\"><span>{$label}</span><select name=\"{$name}\" m-field=\"{$name}\"{$required}>{$placeholder}{$options}</select></label>";
+        return "<label id=\"{$id}\" class=\"wf-field\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Select\" data-mh-role=\"Input\"><span>{$label}</span><select name=\"{$name}\" m-field=\"{$name}\"{$required}>{$placeholder}{$options}</select></label>";
     }
 
     /** @param array<string,mixed> $node */
@@ -365,7 +371,32 @@ HTML;
         $value = $this->escape((string) $node['value']);
         $required = $node['required'] ? ' required' : '';
 
-        return "<label id=\"{$id}\" class=\"wf-field wf-option\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Checkbox\"><input type=\"checkbox\" name=\"{$name}\" value=\"{$value}\" m-field=\"{$name}\"{$required}><span>{$label}</span></label>";
+        return "<label id=\"{$id}\" class=\"wf-field wf-option\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Checkbox\" data-mh-role=\"Option\"><input type=\"checkbox\" name=\"{$name}\" value=\"{$value}\" m-field=\"{$name}\"{$required}><span>{$label}</span></label>";
+    }
+
+    private function regionMagicHtmlRole(string $semantic): string
+    {
+        return match ($semantic) {
+            'document' => 'Page',
+            'header' => 'Header',
+            'main' => 'Main',
+            'section' => 'Section',
+            'article', 'list-item' => 'Item',
+            'aside' => 'Frame',
+            'footer' => 'Footer',
+            'form' => 'Form',
+            default => 'Group',
+        };
+    }
+
+    private function textMagicHtmlRole(string $role): string
+    {
+        return match ($role) {
+            'heading-1', 'heading-2', 'heading-3' => 'Title',
+            'label' => 'Label',
+            'eyebrow', 'price', 'step-number' => 'Accent',
+            default => 'Desc',
+        };
     }
 
     private function placeholder(mixed $value): string

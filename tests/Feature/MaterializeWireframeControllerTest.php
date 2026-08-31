@@ -168,12 +168,20 @@ final class MaterializeWireframeControllerTest extends TestCase
             ->assertJsonPath('wireframe_decorate_ast.surfaces.image', '#d1d5db')
             ->assertJsonPath('wireframe_decorate_ast.borders.leaf.width_px', 0)
             ->assertJsonPath('telemetry.renderer', 'semantic-wireframe-html')
-            ->assertJsonPath('telemetry.renderer_version', '2.0');
+            ->assertJsonPath('telemetry.renderer_version', '2.1');
 
         $html = base64_decode($response->json('files.0.content_base64'), true);
         $this->assertIsString($html);
         $this->assertStringContainsString('<html lang="ja">', $html);
         $this->assertStringContainsString('<h1 id="hero-title"', $html);
+        $this->assertStringContainsString('data-wf-semantic="document" data-wf-stage="none" data-wf-emphasis="neutral" data-mh-role="Page"', $html);
+        $this->assertStringContainsString('data-wf-semantic="section" data-wf-stage="attention" data-wf-emphasis="primary" data-mh-role="Section" data-mh-composition="hero"', $html);
+        $this->assertStringContainsString('data-wf-type="Text" data-mh-role="Title"', $html);
+        $this->assertStringContainsString('data-wf-type="Image" data-aspect="16:9" data-mh-role="Image"', $html);
+        $this->assertStringContainsString('data-wf-type="Link" data-emphasis="primary" data-mh-role="Link"', $html);
+        $this->assertStringContainsString('data-wf-type="Button" data-emphasis="primary" data-mh-role="Btn"', $html);
+        $this->assertStringContainsString('data-wf-type="Input" data-mh-role="Input"', $html);
+        $this->assertStringContainsString('data-wf-type="Checkbox" data-mh-role="Option"', $html);
         $this->assertStringContainsString('作り直す前に、まず直せるか診断。', $html);
         $this->assertStringContainsString('&lt;安心&gt;', $html);
         $this->assertStringNotContainsString('<安心>', $html);
