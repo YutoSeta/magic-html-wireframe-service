@@ -4,6 +4,8 @@ namespace Tests\Feature\Services;
 
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Mockery;
 use Tests\Support\WireframeV2Fixture;
 use Tests\TestCase;
 
@@ -110,6 +112,42 @@ final class OpenAiWireframeGeneratorTest extends TestCase
             ->assertJsonPath('telemetry.semantic_attempt_count', 1)
             ->assertJsonPath('telemetry.retry_count', 1);
         Http::assertSentCount(2);
+    }
+
+    public function test_returns_502_and_logs_only_sanitized_metadata_when_provider_rejects_request(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake([
+            'https://api.openai.test/v1/responses' => Http::response([
+                'error' => [
+                    'message' => 'Sensitive upstream detail must not be logged.',
+                    'type' => 'invalid_request_error',
+                    'code' => 'invalid_value',
+                    'param' => 'max_output_tokens',
+                ],
+            ], 400, ['x-request-id' => 'req_safe_123']),
+        ]);
+        Log::spy();
+
+        $response = $this->withToken('test-token')
+            ->withHeader('Idempotency-Key', 'openai-provider-rejected-0001')
+            ->postJson('/api/v1/wireframes', $this->payload());
+
+        $response->assertStatus(502)
+            ->assertJsonPath('type', 'wireframe_provider_failed')
+            ->assertJsonMissing(['detail' => 'Sensitive upstream detail must not be logged.']);
+        Log::shouldHaveReceived('warning')
+            ->once()
+            ->with('Wireframe provider rejected request.', Mockery::on(fn (array $context): bool => $context === [
+                'provider' => 'openai',
+                'model' => 'gpt-5.6',
+                'status' => 400,
+                'request_id' => 'req_safe_123',
+                'error_type' => 'invalid_request_error',
+                'error_code' => 'invalid_value',
+                'error_param' => 'max_output_tokens',
+            ]));
+        Http::assertSentCount(1);
     }
 
     public function test_v1_invalid_json_keeps_the_single_call_provider_failure_contract(): void

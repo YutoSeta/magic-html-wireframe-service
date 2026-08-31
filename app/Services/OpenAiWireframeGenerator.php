@@ -6,6 +6,7 @@ use App\Exceptions\InvalidWireframeException;
 use App\Services\Contracts\ReportsWireframeTelemetry;
 use App\Services\Contracts\WireframeGenerator;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, WireframeGenerator
@@ -66,6 +67,16 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
             }
 
             if (! $response->successful()) {
+                Log::warning('Wireframe provider rejected request.', [
+                    'provider' => 'openai',
+                    'model' => $this->identifier(config('services.openai.model')),
+                    'status' => $response->status(),
+                    'request_id' => $this->identifier($response->header('x-request-id')),
+                    'error_type' => $this->identifier($response->json('error.type')),
+                    'error_code' => $this->identifier($response->json('error.code')),
+                    'error_param' => $this->identifier($response->json('error.param')),
+                ]);
+
                 throw new RuntimeException('The wireframe provider rejected the request.');
             }
             $providerResponse = $response->json();
@@ -102,6 +113,17 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
     public function telemetry(): ?array
     {
         return $this->telemetry;
+    }
+
+    private function identifier(mixed $value): ?string
+    {
+        if (! is_string($value)
+            || mb_strlen($value) > 200
+            || preg_match('/\A[A-Za-z0-9][A-Za-z0-9._:@+\/-]*\z/D', $value) !== 1) {
+            return null;
+        }
+
+        return $value;
     }
 
     /** @return array<string,mixed> */
