@@ -118,12 +118,17 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
     }
 
     /** @param array<string,mixed> $siteAst @param array<string,mixed> $brief @return array<string,mixed> */
-    public function startBackground(array $siteAst, array $brief, string $locale, int $wireframeAstVersion = 1): array
-    {
+    public function startBackground(
+        array $siteAst,
+        array $brief,
+        string $locale,
+        int $wireframeAstVersion = 1,
+        ?string $validationFeedback = null,
+    ): array {
         $this->validator->validateGenerationInput($siteAst, $locale, $wireframeAstVersion);
         $response = $this->providerRequest()->post(
             (string) config('services.openai.url'),
-            $this->providerPayload($siteAst, $brief, $locale, $wireframeAstVersion, null, true),
+            $this->providerPayload($siteAst, $brief, $locale, $wireframeAstVersion, $validationFeedback, true),
         );
         $this->assertSuccessfulProviderResponse($response);
         $providerResponse = $response->json();
@@ -166,12 +171,19 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
             throw new RuntimeException('The wireframe provider returned invalid JSON.');
         }
         $wireframe = $this->validator->validate($document, $siteAst, $wireframeAstVersion, $locale);
+
+        return ['wireframe' => $wireframe, 'telemetry' => $this->backgroundTelemetry($providerResponse)];
+    }
+
+    /** @param array<string,mixed> $providerResponse @return array<string,mixed> */
+    public function backgroundTelemetry(array $providerResponse): array
+    {
         $providerTelemetry = new OpenAiTelemetry((array) config('services.openai.rate_card', []));
         $providerTelemetry->beginSemanticAttempt();
         $providerTelemetry->recordProviderRequest();
         $providerTelemetry->recordResponse($providerResponse);
 
-        return ['wireframe' => $wireframe, 'telemetry' => $providerTelemetry->toArray()];
+        return $providerTelemetry->toArray();
     }
 
     private function providerRequest(): PendingRequest
