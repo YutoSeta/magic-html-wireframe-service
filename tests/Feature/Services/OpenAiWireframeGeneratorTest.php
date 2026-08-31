@@ -4,6 +4,7 @@ namespace Tests\Feature\Services;
 
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Tests\Support\WireframeV2Fixture;
 use Tests\TestCase;
 
 final class OpenAiWireframeGeneratorTest extends TestCase
@@ -109,6 +110,124 @@ final class OpenAiWireframeGeneratorTest extends TestCase
             ->assertJsonPath('telemetry.semantic_attempt_count', 1)
             ->assertJsonPath('telemetry.retry_count', 1);
         Http::assertSentCount(2);
+    }
+
+    public function test_v1_invalid_json_keeps_the_single_call_provider_failure_contract(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake([
+            'https://api.openai.test/v1/responses' => Http::response([
+                'id' => 'resp_v1_invalid_json',
+                'model' => 'gpt-5.6-sol-2026-08-31',
+                'output_text' => '{',
+                'usage' => [
+                    'input_tokens' => 10,
+                    'input_tokens_details' => ['cached_tokens' => 0],
+                    'output_tokens' => 1,
+                    'output_tokens_details' => ['reasoning_tokens' => 0],
+                    'total_tokens' => 11,
+                ],
+            ]),
+        ]);
+
+        $this->withToken('test-token')
+            ->withHeader('Idempotency-Key', 'openai-wireframe-v1-invalid-json-0001')
+            ->postJson('/api/v1/wireframes', $this->payload())
+            ->assertStatus(502)
+            ->assertJsonPath('type', 'wireframe_provider_failed');
+
+        Http::assertSentCount(1);
+    }
+
+    public function test_v2_requests_a_recursive_content_bearing_ast_without_provider_owned_decoration(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake([
+            'https://api.openai.test/v1/responses' => Http::sequence()
+                ->push($this->providerResponse('resp_v2', WireframeV2Fixture::document(), 100, 20, 80, 10)),
+        ]);
+        $payload = $this->payload();
+        $payload['wireframe_ast_version'] = 2;
+        $payload['site_ast'] = WireframeV2Fixture::siteAst();
+
+        $response = $this->withToken('test-token')
+            ->withHeader('Idempotency-Key', 'openai-wireframe-v2-0001')
+            ->postJson('/api/v1/wireframes', $payload)
+            ->assertOk()
+            ->assertJsonPath('data.wireframe_ast.version', 2)
+            ->assertJsonPath('data.wireframe_ast.locale', 'ja')
+            ->assertJsonPath('data.wireframe_ast.pages.0.root.type', 'Region')
+            ->assertJsonPath('data.wireframe_ast.pages.0.root.children.1.children.0.journey_stage', 'attention')
+            ->assertJsonPath('data.wireframe_ast.pages.0.root.children.1.children.2.children.1.type', 'Region');
+        $this->assertSame('無料相談を送信する', $response->json('data.wireframe_ast.pages.0.root.children.1.children.2.children.1.children.7.label'));
+
+        Http::assertSent(function ($request): bool {
+            $body = $request->data();
+            $instructions = $body['instructions'] ?? '';
+            $schema = $body['text']['format']['schema'] ?? [];
+
+            return is_string($instructions)
+                && str_contains($instructions, 'AIDMA')
+                && str_contains($instructions, 'content-free')
+                && str_contains($instructions, 'Input, Textarea, Select, or Checkbox')
+                && ($schema['properties']['version']['const'] ?? null) === 2
+                && ($schema['properties']['pages']['maxItems'] ?? null) === 8
+                && ($schema['$defs']['region']['properties']['children']['items']['$ref'] ?? null) === '#/$defs/node'
+                && count($schema['$defs']['node']['anyOf'] ?? []) === 9
+                && ($body['max_output_tokens'] ?? null) === 64000
+                && ! str_contains(json_encode($body, JSON_THROW_ON_ERROR), 'wireframe-neutral-v1');
+        });
+    }
+
+    public function test_v2_retries_once_when_the_provider_returns_incomplete_json(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake([
+            'https://api.openai.test/v1/responses' => Http::sequence()
+                ->push([
+                    'id' => 'resp_v2_incomplete',
+                    'model' => 'gpt-5.6-sol-2026-08-31',
+                    'status' => 'incomplete',
+                    'output_text' => '{"version":2',
+                    'usage' => [
+                        'input_tokens' => 10,
+                        'input_tokens_details' => ['cached_tokens' => 0],
+                        'output_tokens' => 5,
+                        'output_tokens_details' => ['reasoning_tokens' => 1],
+                        'total_tokens' => 15,
+                    ],
+                ])
+                ->push($this->providerResponse('resp_v2_complete', WireframeV2Fixture::document(), 20, 0, 40, 5)),
+        ]);
+        $payload = $this->payload();
+        $payload['wireframe_ast_version'] = 2;
+        $payload['site_ast'] = WireframeV2Fixture::siteAst();
+
+        $this->withToken('test-token')
+            ->withHeader('Idempotency-Key', 'openai-wireframe-v2-incomplete-retry-0001')
+            ->postJson('/api/v1/wireframes', $payload)
+            ->assertOk()
+            ->assertJsonPath('data.wireframe_ast.version', 2)
+            ->assertJsonPath('telemetry.provider_request_count', 2)
+            ->assertJsonPath('telemetry.semantic_attempt_count', 2);
+
+        Http::assertSentCount(2);
+    }
+
+    public function test_v2_rejects_invalid_site_inputs_before_incurring_a_provider_call(): void
+    {
+        Http::preventStrayRequests();
+        $payload = $this->payload();
+        $payload['wireframe_ast_version'] = 2;
+        $payload['site_ast']['pages'][0]['path'] = '/Privacy/';
+
+        $this->withToken('test-token')
+            ->withHeader('Idempotency-Key', 'openai-wireframe-v2-invalid-input-0001')
+            ->postJson('/api/v1/wireframes', $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('type', 'invalid_wireframe');
+
+        Http::assertNothingSent();
     }
 
     /** @return array<string,mixed> */

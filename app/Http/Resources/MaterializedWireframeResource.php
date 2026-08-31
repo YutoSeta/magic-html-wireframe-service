@@ -20,6 +20,9 @@ final class MaterializedWireframeResource extends JsonResource
             'entry_path' => $this->resource['entry_path'],
             'files' => $this->resource['files'],
             'file_manifest' => $this->resource['file_manifest'],
+            ...(isset($this->resource['wireframe_decorate_ast'])
+                ? ['wireframe_decorate_ast' => $this->resource['wireframe_decorate_ast']]
+                : []),
             'telemetry' => $this->resource['telemetry'],
         ];
     }

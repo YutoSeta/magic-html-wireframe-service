@@ -41,6 +41,8 @@ final class CapabilityController extends Controller
             'tier' => 0,
             'status' => $ready ? 'ok' : 'degraded',
             'contract_version' => '1.0',
+            'supported_wireframe_ast_versions' => [1, 2],
+            'wireframe_decorate_profile' => 'wireframe-neutral-v1',
             'checks' => $checks,
         ], $ready ? 200 : 503);
     }
