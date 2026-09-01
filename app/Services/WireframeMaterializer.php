@@ -390,8 +390,9 @@ HTML;
         $type = $this->escape((string) $node['input_type']);
         $placeholder = $this->placeholder($node['placeholder']);
         $required = $node['required'] ? ' required' : '';
+        $controlId = $id.'-control';
 
-        return "<label id=\"{$id}\" class=\"wf-field\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Input\" data-mh-role=\"Input\"><span>{$label}</span><input type=\"{$type}\" name=\"{$name}\" m-field=\"{$name}\"{$placeholder}{$required}></label>";
+        return "<div id=\"{$id}\" class=\"wf-field\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Input\" data-mh-role=\"Group\" data-mh-qualifier=\"Field\"><label for=\"{$controlId}\" data-mh-role=\"Label\">{$label}</label><input type=\"{$type}\" name=\"{$name}\" m-field=\"{$name}\" id=\"{$controlId}\" data-mh-role=\"Input\" data-mh-qualifier=\"Text\"{$placeholder}{$required}></div>";
     }
 
     /** @param array<string,mixed> $node */
@@ -402,8 +403,9 @@ HTML;
         $name = $this->escape((string) $node['name']);
         $placeholder = $this->placeholder($node['placeholder']);
         $required = $node['required'] ? ' required' : '';
+        $controlId = $id.'-control';
 
-        return "<label id=\"{$id}\" class=\"wf-field\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Textarea\" data-mh-role=\"Input\"><span>{$label}</span><textarea name=\"{$name}\" m-field=\"{$name}\"{$placeholder}{$required}></textarea></label>";
+        return "<div id=\"{$id}\" class=\"wf-field\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Textarea\" data-mh-role=\"Group\" data-mh-qualifier=\"Field\"><label for=\"{$controlId}\" data-mh-role=\"Label\">{$label}</label><textarea name=\"{$name}\" m-field=\"{$name}\" id=\"{$controlId}\" data-mh-role=\"Input\" data-mh-qualifier=\"Textarea\"{$placeholder}{$required}></textarea></div>";
     }
 
     /** @param array<string,mixed> $node */
@@ -413,15 +415,16 @@ HTML;
         $label = $this->escape((string) $node['label']);
         $name = $this->escape((string) $node['name']);
         $required = $node['required'] ? ' required' : '';
+        $controlId = $id.'-control';
         $placeholder = $node['placeholder'] !== null
-            ? '<option value="">'.$this->escape((string) $node['placeholder']).'</option>'
+            ? '<option value="" data-mh-role="Option">'.$this->escape((string) $node['placeholder']).'</option>'
             : '';
         $options = implode('', array_map(
-            fn (array $option): string => '<option value="'.$this->escape((string) $option['value']).'">'.$this->escape((string) $option['label']).'</option>',
+            fn (array $option): string => '<option value="'.$this->escape((string) $option['value']).'" data-mh-role="Option">'.$this->escape((string) $option['label']).'</option>',
             $node['options'],
         ));
 
-        return "<label id=\"{$id}\" class=\"wf-field\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Select\" data-mh-role=\"Input\"><span>{$label}</span><select name=\"{$name}\" m-field=\"{$name}\"{$required}>{$placeholder}{$options}</select></label>";
+        return "<div id=\"{$id}\" class=\"wf-field\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Select\" data-mh-role=\"Group\" data-mh-qualifier=\"Field\"><label for=\"{$controlId}\" data-mh-role=\"Label\">{$label}</label><select name=\"{$name}\" m-field=\"{$name}\" id=\"{$controlId}\" data-mh-role=\"Input\" data-mh-qualifier=\"Select\"{$required}>{$placeholder}{$options}</select></div>";
     }
 
     /** @param array<string,mixed> $node */
@@ -432,8 +435,9 @@ HTML;
         $name = $this->escape((string) $node['name']);
         $value = $this->escape((string) $node['value']);
         $required = $node['required'] ? ' required' : '';
+        $controlId = $id.'-control';
 
-        return "<label id=\"{$id}\" class=\"wf-field wf-option\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Checkbox\" data-mh-role=\"Option\"><input type=\"checkbox\" name=\"{$name}\" value=\"{$value}\" m-field=\"{$name}\"{$required}><span>{$label}</span></label>";
+        return "<div id=\"{$id}\" class=\"wf-field wf-option\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Checkbox\" data-mh-role=\"Group\" data-mh-qualifier=\"Field\"><input type=\"checkbox\" name=\"{$name}\" value=\"{$value}\" m-field=\"{$name}\" id=\"{$controlId}\" data-mh-role=\"Input\" data-mh-qualifier=\"Checkbox\"{$required}><label for=\"{$controlId}\" data-mh-role=\"Label\">{$label}</label></div>";
     }
 
     private function regionMagicHtmlRole(string $semantic): string

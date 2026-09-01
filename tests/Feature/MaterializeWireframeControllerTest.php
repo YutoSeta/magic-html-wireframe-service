@@ -182,8 +182,12 @@ final class MaterializeWireframeControllerTest extends TestCase
         $this->assertStringContainsString('data-wf-type="Image" data-aspect="16:9" data-mh-role="Image"', $html);
         $this->assertStringContainsString('data-wf-type="Link" data-emphasis="primary" data-mh-role="Link"', $html);
         $this->assertStringContainsString('data-wf-type="Button" data-emphasis="primary" data-mh-role="Btn"', $html);
-        $this->assertStringContainsString('data-wf-type="Input" data-mh-role="Input"', $html);
-        $this->assertStringContainsString('data-wf-type="Checkbox" data-mh-role="Option"', $html);
+        $this->assertStringContainsString('data-wf-type="Input" data-mh-role="Group" data-mh-qualifier="Field"', $html);
+        $this->assertStringContainsString('data-wf-type="Checkbox" data-mh-role="Group" data-mh-qualifier="Field"', $html);
+        $this->assertStringContainsString('data-mh-role="Input" data-mh-qualifier="Text"', $html);
+        $this->assertStringContainsString('data-mh-role="Input" data-mh-qualifier="Textarea"', $html);
+        $this->assertStringContainsString('data-mh-role="Input" data-mh-qualifier="Select"', $html);
+        $this->assertStringContainsString('data-mh-role="Input" data-mh-qualifier="Checkbox"', $html);
         $this->assertStringContainsString('作り直す前に、まず直せるか診断。', $html);
         $this->assertStringContainsString('&lt;安心&gt;', $html);
         $this->assertStringNotContainsString('<安心>', $html);
@@ -291,6 +295,21 @@ final class MaterializeWireframeControllerTest extends TestCase
 
         $payload = $this->v2Payload();
         $payload['wireframe_ast']['pages'][0]['root']['children'][0]['children'][1]['children'][0]['href'] = '#missing-target';
+
+        $this->withToken('test-token')
+            ->postJson('/api/v1/wireframes/materialize', $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('type', 'invalid_wireframe');
+    }
+
+    public function test_v2_rejects_text_nodes_that_declare_image_identity(): void
+    {
+        $payload = $this->v2Payload();
+        $payload['wireframe_ast']['pages'][0]['root']['children'][1]['children'][0]['children'][1] = WireframeV2Fixture::text(
+            'hero-image',
+            'body',
+            '静かな診察室を想起させる導入ビジュアル',
+        );
 
         $this->withToken('test-token')
             ->postJson('/api/v1/wireframes/materialize', $payload)

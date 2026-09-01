@@ -207,6 +207,7 @@ final class WireframeValidator
         $this->assert($type === 'Region' || in_array($type, self::LEAF_TYPES, true), 'A wireframe contains an unsupported node type.');
         $id = $this->nodeId($node['id'] ?? null);
         $this->assert(! isset($state['ids'][$id]), 'Node IDs must be unique within a page.');
+        $this->assertNodeIdentityMatchesType($id, $type);
         $state['ids'][$id] = true;
 
         if ($type === 'Region') {
@@ -479,6 +480,14 @@ final class WireframeValidator
         $this->assert((bool) preg_match('/^[a-z0-9][a-z0-9-]*$/', $id), 'Node IDs must use lowercase kebab-case.');
 
         return $id;
+    }
+
+    private function assertNodeIdentityMatchesType(string $id, string $type): void
+    {
+        $this->assert(
+            ! in_array('image', explode('-', $id), true) || $type === 'Image',
+            "Node {$id} declares image intent and must use the Image type.",
+        );
     }
 
     private function fieldName(mixed $value): string
