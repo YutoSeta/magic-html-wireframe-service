@@ -546,6 +546,25 @@ final class WireframeJobControllerTest extends TestCase
         $this->assertSame('価値提案と資料請求への導入', data_get($section, 'children.3.alt'));
     }
 
+    public function test_section_completion_deterministically_supplies_a_planned_missing_form(): void
+    {
+        $document = $this->contactSection();
+        array_pop($document['section']['children']);
+        $pagePlan = $this->sectionPlan()['pages'][0];
+        $sectionPlan = $pagePlan['sections'][1];
+
+        $section = app(OpenAiWireframeGenerator::class)->completeSectionBackground(
+            $this->structuredProviderResponse('resp_missing_form', $document),
+            $pagePlan,
+            $sectionPlan,
+        );
+
+        $this->assertSame('form', data_get($section, 'children.1.semantic'));
+        $this->assertSame('Input', data_get($section, 'children.1.controls.0.type'));
+        $this->assertSame('email', data_get($section, 'children.1.controls.0.input_type'));
+        $this->assertSame('submit', data_get($section, 'children.1.submit.button_type'));
+    }
+
     public function test_section_parallel_mode_retries_only_a_terminal_provider_section_once(): void
     {
         Http::fake([

@@ -352,13 +352,46 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
             $facts['image'] = 1;
             $facts['nodes']++;
         }
+        if (($sectionPlan['requires_form'] ?? false) === true && $facts['form'] === 0) {
+            $sectionId = (string) $sectionPlan['id'];
+            $journeyStage = (string) ($sectionPlan['journey_stage'] ?? 'action');
+            $section['children'][] = [
+                'type' => 'Region',
+                'id' => $sectionId.'-form',
+                'semantic' => 'form',
+                'layout' => 'stack',
+                'journey_stage' => $journeyStage,
+                'emphasis' => 'primary',
+                'content' => [[
+                    'type' => 'Text',
+                    'id' => $sectionId.'-form-note',
+                    'role' => 'body',
+                    'content' => '必要事項をご入力ください。',
+                ]],
+                'controls' => [[
+                    'type' => 'Input',
+                    'id' => $sectionId.'-email',
+                    'input_type' => 'email',
+                    'label' => 'メールアドレス',
+                    'name' => 'email',
+                    'placeholder' => 'name@example.jp',
+                    'required' => true,
+                ]],
+                'submit' => [
+                    'type' => 'Button',
+                    'id' => $sectionId.'-submit',
+                    'label' => '送信する',
+                    'button_type' => 'submit',
+                    'emphasis' => 'primary',
+                ],
+            ];
+            $facts['form'] = 1;
+            $facts['nodes'] += 4;
+        }
         $expectedHeadingCount = ($sectionPlan['contains_heading_1'] ?? false) === true ? 1 : 0;
         $violations = [];
         if ($facts['heading_1'] !== $expectedHeadingCount) {
             $violations[] = "heading-1 expected {$expectedHeadingCount}, received {$facts['heading_1']}";
-        }
-        if (($sectionPlan['requires_form'] ?? false) === true && $facts['form'] === 0) {
-            $violations[] = 'required semantic form was missing';
         }
         if ($facts['nodes'] > 60) {
             $violations[] = "node count {$facts['nodes']} exceeded 60";
