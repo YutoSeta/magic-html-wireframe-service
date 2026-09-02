@@ -273,6 +273,30 @@ final class OpenAiWireframeGeneratorTest extends TestCase
         Http::assertSentCount(2);
     }
 
+    public function test_v2_repairs_an_unambiguous_local_section_anchor_before_validation(): void
+    {
+        $document = WireframeV2Fixture::document();
+        $document['pages'][0]['root']['children'][1]['children'][2]['id'] = 'consultation-section';
+        Http::preventStrayRequests();
+        Http::fake([
+            'https://api.openai.test/v1/responses' => Http::response(
+                $this->providerResponse('resp_v2_anchor', $this->providerDocument($document), 100, 0, 80, 10),
+            ),
+        ]);
+        $payload = $this->payload();
+        $payload['wireframe_ast_version'] = 2;
+        $payload['site_ast'] = WireframeV2Fixture::siteAst();
+
+        $this->withToken('test-token')
+            ->withHeader('Idempotency-Key', 'openai-wireframe-v2-anchor-repair-0001')
+            ->postJson('/api/v1/wireframes', $payload)
+            ->assertOk()
+            ->assertJsonPath('data.wireframe_ast.pages.0.root.children.0.children.1.children.1.href', '#consultation-section')
+            ->assertJsonPath('data.wireframe_ast.pages.0.root.children.1.children.0.children.0.children.3.href', '#consultation-section');
+
+        Http::assertSentCount(1);
+    }
+
     public function test_v2_rejects_invalid_site_inputs_before_incurring_a_provider_call(): void
     {
         Http::preventStrayRequests();

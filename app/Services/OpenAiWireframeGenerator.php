@@ -546,7 +546,8 @@ PROMPT;
         }
         foreach ($document['pages'] as $pageIndex => $page) {
             if (is_array($page) && is_array($page['root'] ?? null)) {
-                $document['pages'][$pageIndex]['root'] = $this->normalizeProviderNode($page['root']);
+                $root = $this->normalizeProviderNode($page['root']);
+                $document['pages'][$pageIndex]['root'] = $this->normalizeProviderAnchors($root);
             }
         }
 
@@ -575,6 +576,60 @@ PROMPT;
         }
 
         return $node;
+    }
+
+    /** @param array<string,mixed> $root @return array<string,mixed> */
+    private function normalizeProviderAnchors(array $root): array
+    {
+        $ids = [];
+        $collectIds = function (array $node) use (&$collectIds, &$ids): void {
+            if (is_string($node['id'] ?? null)) {
+                $ids[$node['id']] = true;
+            }
+            foreach ($node['children'] ?? [] as $child) {
+                if (is_array($child)) {
+                    $collectIds($child);
+                }
+            }
+        };
+        $collectIds($root);
+
+        $rewrite = function (array $node) use (&$rewrite, $ids): array {
+            $href = $node['href'] ?? null;
+            if (($node['type'] ?? null) === 'Link'
+                && is_string($href)
+                && preg_match('/\A#([a-z0-9][a-z0-9-]*)\z/D', $href, $matches) === 1
+                && ! isset($ids[$matches[1]])) {
+                $candidate = $this->unambiguousAnchorCandidate($matches[1], $ids);
+                if ($candidate !== null) {
+                    $node['href'] = "#{$candidate}";
+                }
+            }
+            foreach ($node['children'] ?? [] as $index => $child) {
+                if (is_array($child)) {
+                    $node['children'][$index] = $rewrite($child);
+                }
+            }
+
+            return $node;
+        };
+
+        return $rewrite($root);
+    }
+
+    /** @param array<string,bool> $ids */
+    private function unambiguousAnchorCandidate(string $anchor, array $ids): ?string
+    {
+        $section = "{$anchor}-section";
+        if (isset($ids[$section])) {
+            return $section;
+        }
+        $candidates = array_values(array_filter(
+            array_keys($ids),
+            static fn (string $id): bool => str_starts_with($id, "{$anchor}-"),
+        ));
+
+        return count($candidates) === 1 ? $candidates[0] : null;
     }
 
     /** @return list<string> */
