@@ -11,5 +11,6 @@ return [
     ],
     'jobs' => [
         'ttl_seconds' => (int) env('WIREFRAME_JOB_TTL_SECONDS', 86400),
+        'section_start_batch' => (int) env('WIREFRAME_SECTION_START_BATCH', 6),
     ],
 ];

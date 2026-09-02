@@ -20,6 +20,9 @@ final class WireframeController extends Controller
         GenerateWireframeRequest $request,
         IdempotentWireframeGenerator $generator,
     ): JsonResponse {
+        if ($request->validated('generation_mode') === 'section_parallel') {
+            return Problem::response($request, 422, 'generation_mode_requires_async', 'Section-parallel generation is available through the wireframe jobs endpoint.');
+        }
         try {
             $result = $generator->generate(
                 $request->idempotencyKey(),

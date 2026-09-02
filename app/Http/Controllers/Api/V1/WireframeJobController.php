@@ -6,6 +6,7 @@ use App\Exceptions\InvalidWireframeException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\GenerateWireframeRequest;
 use App\Services\OpenAiWireframeGenerator;
+use App\Services\SectionParallelWireframeWorkflow;
 use App\Support\Problem;
 use App\Support\WireframeJobStore;
 use Illuminate\Http\JsonResponse;
@@ -18,6 +19,7 @@ final class WireframeJobController extends Controller
         GenerateWireframeRequest $request,
         WireframeJobStore $jobs,
         OpenAiWireframeGenerator $generator,
+        SectionParallelWireframeWorkflow $workflow,
     ): JsonResponse {
         $payload = $request->validated();
         $claim = $jobs->claim($request->idempotencyKey(), $payload);
@@ -26,18 +28,22 @@ final class WireframeJobController extends Controller
         }
         if ($claim['created']) {
             try {
-                $providerResponse = $generator->startBackground(
-                    $payload['site_ast'],
-                    $payload['brief'],
-                    (string) $payload['locale'],
-                    (int) $payload['wireframe_ast_version'],
-                    executionProfile: (string) $payload['execution_profile'],
-                );
-                $claim['job'] = $jobs->started(
-                    (string) $claim['job']['id'],
-                    (string) $providerResponse['id'],
-                    (string) $providerResponse['status'],
-                );
+                if (($payload['generation_mode'] ?? null) === 'section_parallel') {
+                    $claim['job'] = $workflow->start((string) $claim['job']['id'], $payload, $jobs);
+                } else {
+                    $providerResponse = $generator->startBackground(
+                        $payload['site_ast'],
+                        $payload['brief'],
+                        (string) $payload['locale'],
+                        (int) $payload['wireframe_ast_version'],
+                        executionProfile: (string) $payload['execution_profile'],
+                    );
+                    $claim['job'] = $jobs->started(
+                        (string) $claim['job']['id'],
+                        (string) $providerResponse['id'],
+                        (string) $providerResponse['status'],
+                    );
+                }
             } catch (RuntimeException $exception) {
                 $jobs->failed((string) $claim['job']['id'], 'wireframe_provider_failed', 'The background wireframe generation could not be started.');
 
@@ -53,12 +59,22 @@ final class WireframeJobController extends Controller
         string $job,
         WireframeJobStore $jobs,
         OpenAiWireframeGenerator $generator,
+        SectionParallelWireframeWorkflow $workflow,
     ): JsonResponse {
         $record = $jobs->find($job);
         if ($record === null) {
             return Problem::response($request, 404, 'job_not_found', 'The wireframe job does not exist or has expired.');
         }
         if (! in_array($record['status'] ?? null, ['queued', 'in_progress'], true)) {
+            return response()->json($record, headers: ['Cache-Control' => 'private, no-store']);
+        }
+        if (($record['generation_mode'] ?? null) === 'section_parallel') {
+            try {
+                $record = $workflow->advance($job, $jobs);
+            } catch (RuntimeException $exception) {
+                return Problem::response($request, 502, 'wireframe_provider_failed', $exception->getMessage());
+            }
+
             return response()->json($record, headers: ['Cache-Control' => 'private, no-store']);
         }
         $context = $jobs->providerContext($job);

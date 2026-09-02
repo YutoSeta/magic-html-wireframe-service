@@ -24,6 +24,7 @@ final class GenerateWireframeRequest extends ContractRequest
             'brief.materials.*' => ['string', 'max:8000'],
             'locale' => ['sometimes', 'string', 'min:2', 'max:20'],
             'execution_profile' => ['sometimes', 'string', 'in:fast,balanced,quality'],
+            'generation_mode' => ['sometimes', 'string', 'in:monolithic,section_parallel'],
         ];
     }
 
@@ -46,6 +47,12 @@ final class GenerateWireframeRequest extends ContractRequest
                     $validator->errors()->add('Idempotency-Key', 'The Idempotency-Key header must be between 8 and 200 characters.');
                 }
             },
+            function (Validator $validator): void {
+                if ((int) $this->input('wireframe_ast_version', 1) !== 2
+                    && $this->input('generation_mode', 'monolithic') === 'section_parallel') {
+                    $validator->errors()->add('generation_mode', 'Section-parallel generation requires Wireframe AST version 2.');
+                }
+            },
         ];
     }
 
@@ -60,6 +67,7 @@ final class GenerateWireframeRequest extends ContractRequest
             'locale' => $this->input('locale', 'ja'),
             'wireframe_ast_version' => $this->input('wireframe_ast_version', 1),
             'execution_profile' => $this->input('execution_profile', 'fast'),
+            'generation_mode' => $this->input('generation_mode', 'monolithic'),
         ]);
     }
 }

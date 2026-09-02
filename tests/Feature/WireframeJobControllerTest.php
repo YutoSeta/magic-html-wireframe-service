@@ -373,6 +373,105 @@ final class WireframeJobControllerTest extends TestCase
             ->assertJsonPath('type', 'job_not_found');
     }
 
+    public function test_section_parallel_mode_plans_generates_sections_in_parallel_and_applies_whole_site_review(): void
+    {
+        config()->set('wireframe.jobs.section_start_batch', 6);
+        Http::fake([
+            'https://api.openai.test/v1/responses' => Http::sequence()
+                ->push(['id' => 'resp_plan', 'status' => 'queued'])
+                ->push(['id' => 'resp_section_hero', 'status' => 'queued'])
+                ->push(['id' => 'resp_section_contact', 'status' => 'queued'])
+                ->push(['id' => 'resp_review', 'status' => 'queued']),
+            'https://api.openai.test/v1/responses/resp_plan' => Http::response(
+                $this->structuredProviderResponse('resp_plan', $this->sectionPlan()),
+            ),
+            'https://api.openai.test/v1/responses/resp_section_hero' => Http::response(
+                $this->structuredProviderResponse('resp_section_hero', $this->heroSection()),
+            ),
+            'https://api.openai.test/v1/responses/resp_section_contact' => Http::response(
+                $this->structuredProviderResponse('resp_section_contact', $this->contactSection()),
+            ),
+            'https://api.openai.test/v1/responses/resp_review' => Http::response(
+                $this->structuredProviderResponse('resp_review', [
+                    'version' => 1,
+                    'findings' => [[
+                        'code' => 'clarity', 'severity' => 'warning', 'page_key' => 'home',
+                        'node_id' => 'hero-body', 'detail' => '導入判断の対象を明確にする。',
+                    ]],
+                    'operations' => [[
+                        'op' => 'replace_copy', 'page_key' => 'home', 'node_id' => 'hero-body',
+                        'property' => 'content', 'value' => '導入判断に必要な機能・費用・進め方を一冊で確認できます。',
+                    ], [
+                        'op' => 'reorder_sections', 'page_key' => 'home',
+                        'section_ids' => ['hero-section', 'contact-section'],
+                    ]],
+                ]),
+            ),
+        ]);
+        $payload = $this->sectionParallelPayload();
+        $started = $this->withToken('test-token')
+            ->withHeader('Idempotency-Key', 'section-parallel-wireframe-0001')
+            ->postJson('/api/v1/wireframe-jobs', $payload)
+            ->assertAccepted()
+            ->assertJsonPath('generation_mode', 'section_parallel')
+            ->assertJsonPath('stage', 'planning');
+        $path = '/api/v1/wireframe-jobs/'.$started->json('id');
+
+        $this->withToken('test-token')->getJson($path)
+            ->assertOk()->assertJsonPath('stage', 'sections')->assertJsonPath('progress', 0.15);
+        $this->withToken('test-token')->getJson($path)
+            ->assertOk()->assertJsonPath('stage', 'sections')->assertJsonPath('progress', 0.15);
+        $this->withToken('test-token')->getJson($path)
+            ->assertOk()->assertJsonPath('stage', 'review')->assertJsonPath('progress', 0.85);
+        $result = $this->withToken('test-token')->getJson($path)
+            ->assertOk()
+            ->assertJsonPath('status', 'succeeded')
+            ->assertJsonPath('stage', 'complete')
+            ->assertJsonPath('result.wireframe_ast.version', 2)
+            ->assertJsonPath('result.wireframe_ast.pages.0.root.children.1.children.0.id', 'hero-section')
+            ->assertJsonPath('result.wireframe_ast.pages.0.root.children.1.children.1.id', 'contact-section')
+            ->assertJsonPath('result.wireframe_ast.pages.0.root.children.1.children.0.children.1.content', '導入判断に必要な機能・費用・進め方を一冊で確認できます。')
+            ->assertJsonPath('result.generation.mode', 'section_parallel')
+            ->assertJsonPath('result.generation.section_count', 2)
+            ->assertJsonPath('result.generation.review_finding_count', 1)
+            ->assertJsonPath('result.generation.review_operation_count', 2)
+            ->assertJsonPath('result.telemetry.provider_request_count', 4)
+            ->assertJsonPath('result.telemetry.semantic_attempt_count', 4)
+            ->assertJsonPath('result.telemetry.input_tokens', 400)
+            ->assertJsonPath('result.telemetry.output_tokens', 200);
+        $this->assertStringNotContainsString('workflow_encrypted', (string) $result->getContent());
+
+        Http::assertSent(function ($request): bool {
+            if ($request->url() !== 'https://api.openai.test/v1/responses' || $request->method() !== 'POST') {
+                return false;
+            }
+
+            return ($request['metadata']['stage'] ?? null) === 'wireframe_review'
+                && str_contains((string) $request['instructions'], 'never regenerate the whole AST')
+                && ($request['text']['format']['schema']['properties']['operations']['maxItems'] ?? null) === 40;
+        });
+        Http::assertSentCount(8);
+    }
+
+    public function test_section_parallel_mode_requires_v2_and_the_async_endpoint(): void
+    {
+        $payload = $this->payload();
+        $payload['wireframe_ast_version'] = 1;
+        $payload['generation_mode'] = 'section_parallel';
+        $this->withToken('test-token')
+            ->withHeader('Idempotency-Key', 'section-parallel-v1-invalid-0001')
+            ->postJson('/api/v1/wireframe-jobs', $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('generation_mode');
+
+        $payload = $this->sectionParallelPayload();
+        $this->withToken('test-token')
+            ->withHeader('Idempotency-Key', 'section-parallel-sync-invalid-0001')
+            ->postJson('/api/v1/wireframes', $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('type', 'generation_mode_requires_async');
+    }
+
     /** @return array<string,mixed> */
     private function payload(): array
     {
@@ -389,6 +488,111 @@ final class WireframeJobControllerTest extends TestCase
                 'materials' => [],
             ],
             'locale' => 'ja',
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    private function sectionParallelPayload(): array
+    {
+        return [
+            'contract_version' => '1.0',
+            'wireframe_ast_version' => 2,
+            'generation_mode' => 'section_parallel',
+            'execution_profile' => 'fast',
+            'site_ast' => [
+                'version' => 1,
+                'site' => ['name' => 'Schema Test', 'description' => '資料請求LP'],
+                'pages' => [['key' => 'home', 'path' => '/', 'title' => 'Schema Test', 'purpose' => '資料請求']],
+                'navigation' => [['label' => 'ホーム', 'path' => '/']],
+            ],
+            'brief' => [
+                'organization' => 'Schema Test',
+                'goals' => '資料請求',
+                'audience' => '中小企業のIT担当者',
+                'tone' => '簡潔で信頼感',
+                'requirements' => '資料請求フォームを含める',
+                'materials' => [],
+            ],
+            'locale' => 'ja',
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    private function sectionPlan(): array
+    {
+        return [
+            'version' => 1,
+            'pages' => [[
+                'key' => 'home', 'path' => '/', 'title' => 'Schema Test',
+                'sections' => [[
+                    'id' => 'hero-section', 'purpose' => '価値提案と資料請求への導入',
+                    'journey_stage' => 'attention', 'layout' => 'split', 'emphasis' => 'primary',
+                    'contains_heading_1' => true, 'requires_form' => false, 'requires_image' => true,
+                ], [
+                    'id' => 'contact-section', 'purpose' => '資料請求フォーム',
+                    'journey_stage' => 'action', 'layout' => 'stack', 'emphasis' => 'primary',
+                    'contains_heading_1' => false, 'requires_form' => true, 'requires_image' => false,
+                ]],
+            ]],
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    private function heroSection(): array
+    {
+        return [
+            'version' => 1, 'page_key' => 'home', 'section_id' => 'hero-section',
+            'section' => WireframeV2Fixture::region('hero-section', 'section', 'split', 'attention', 'primary', [
+                WireframeV2Fixture::text('hero-title', 'heading-1', 'IT業務を整理する資料をご用意しました'),
+                WireframeV2Fixture::text('hero-body', 'body', '導入判断に必要な情報を一冊で確認できます。'),
+                WireframeV2Fixture::image('hero-image', '資料の内容を示す画面', null, '4:3'),
+                WireframeV2Fixture::link('hero-contact-link', '資料を請求する', '#contact-section', 'primary'),
+            ]),
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    private function contactSection(): array
+    {
+        return [
+            'version' => 1, 'page_key' => 'home', 'section_id' => 'contact-section',
+            'section' => [
+                'type' => 'Region', 'id' => 'contact-section', 'semantic' => 'section',
+                'layout' => 'stack', 'journey_stage' => 'action', 'emphasis' => 'primary', 'children' => [[
+                    'type' => 'Text', 'id' => 'contact-title', 'role' => 'heading-2', 'content' => '資料請求',
+                ], [
+                    'type' => 'Region', 'id' => 'contact-form', 'semantic' => 'form',
+                    'layout' => 'stack', 'journey_stage' => 'action', 'emphasis' => 'primary',
+                    'content' => [[
+                        'type' => 'Text', 'id' => 'contact-form-note', 'role' => 'body', 'content' => '必要事項をご入力ください。',
+                    ]],
+                    'controls' => [[
+                        'type' => 'Input', 'id' => 'contact-email', 'input_type' => 'email',
+                        'label' => 'メールアドレス', 'name' => 'email', 'placeholder' => 'name@example.jp', 'required' => true,
+                    ]],
+                    'submit' => [
+                        'type' => 'Button', 'id' => 'contact-submit', 'label' => '資料を請求する',
+                        'button_type' => 'submit', 'emphasis' => 'primary',
+                    ],
+                ]],
+            ],
+        ];
+    }
+
+    /** @param array<string,mixed> $document @return array<string,mixed> */
+    private function structuredProviderResponse(string $id, array $document): array
+    {
+        return [
+            'id' => $id,
+            'status' => 'completed',
+            'model' => 'gpt-5.6-luna',
+            'output_text' => json_encode($document, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
+            'usage' => [
+                'input_tokens' => 100,
+                'input_tokens_details' => ['cached_tokens' => 20],
+                'output_tokens' => 50,
+                'output_tokens_details' => ['reasoning_tokens' => 10],
+            ],
         ];
     }
 

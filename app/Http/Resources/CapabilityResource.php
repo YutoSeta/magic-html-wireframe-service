@@ -20,11 +20,15 @@ final class CapabilityResource extends JsonResource
             'contract_version' => '1.0',
             'supported_wireframe_ast_versions' => [1, 2],
             'default_wireframe_ast_version' => 1,
+            'generation_modes' => ['monolithic', 'section_parallel'],
+            'default_generation_mode' => 'monolithic',
             'wireframe_decorate_profile' => 'wireframe-neutral-v1',
             'documentation' => url('/api/__verify'),
             'health' => url('/up'),
             'operations' => [
                 'POST /api/v1/wireframes',
+                'POST /api/v1/wireframe-jobs',
+                'GET /api/v1/wireframe-jobs/{job}',
                 'POST /api/v1/wireframes/materialize',
             ],
             'write_safety' => [

@@ -44,6 +44,8 @@ final class WireframeJobStore
                 'status' => 'queued',
                 'progress' => 0.0,
                 'semantic_attempt' => 1,
+                'generation_mode' => (string) ($payload['generation_mode'] ?? 'monolithic'),
+                'stage' => 'generation',
                 'attempt_telemetry' => [],
                 'provider_completion_claimed' => false,
                 'created_at' => $now,
@@ -92,6 +94,149 @@ final class WireframeJobStore
             'provider_response_id' => $providerResponseId,
             'provider_completion_claimed' => false,
         ]);
+    }
+
+    /** @param array<string,mixed> $providerResponse @return array<string,mixed> */
+    public function workflowStarted(string $id, array $providerResponse): array
+    {
+        $workflow = [
+            'revision' => 1,
+            'advancing' => false,
+            'advancing_at' => null,
+            'stage' => 'planning',
+            'plan_response_id' => (string) $providerResponse['id'],
+            'plan' => null,
+            'section_tasks' => [],
+            'section_results' => [],
+            'review_response_id' => null,
+            'assembled' => null,
+        ];
+
+        return $this->update($id, [
+            'status' => ($providerResponse['status'] ?? null) === 'queued' ? 'queued' : 'in_progress',
+            'progress' => 0.05,
+            'stage' => 'planning',
+            'workflow_encrypted' => $this->encrypt($workflow),
+        ]);
+    }
+
+    /** @return array{payload:array<string,mixed>,workflow:array<string,mixed>,revision:int}|null */
+    public function workflowContext(string $id): ?array
+    {
+        $record = $this->internal($id);
+        if ($record === null
+            || ! is_string($record['context_encrypted'] ?? null)
+            || ! is_string($record['workflow_encrypted'] ?? null)) {
+            return null;
+        }
+        $workflow = $this->decrypt($record['workflow_encrypted']);
+
+        return [
+            'payload' => $this->decrypt($record['context_encrypted']),
+            'workflow' => $workflow,
+            'revision' => max(1, (int) ($workflow['revision'] ?? 1)),
+        ];
+    }
+
+    public function claimWorkflowAdvance(string $id, int $revision): bool
+    {
+        return $this->cache->lock("wireframe-workflow-claim:{$id}", 10)->block(5, function () use ($id, $revision): bool {
+            $record = $this->internal($id);
+            if ($record === null || ! is_string($record['workflow_encrypted'] ?? null)) {
+                return false;
+            }
+            $workflow = $this->decrypt($record['workflow_encrypted']);
+            $advancingAt = is_string($workflow['advancing_at'] ?? null)
+                ? Carbon::parse($workflow['advancing_at'])
+                : null;
+            $advanceIsFresh = ($workflow['advancing'] ?? false) === true
+                && $advancingAt !== null
+                && $advancingAt->isAfter(now()->subSeconds(120));
+            if ((int) ($workflow['revision'] ?? 1) !== $revision || $advanceIsFresh) {
+                return false;
+            }
+            $workflow['advancing'] = true;
+            $workflow['advancing_at'] = now()->toIso8601String();
+            $record['workflow_encrypted'] = $this->encrypt($workflow);
+            $record['updated_at'] = now()->toIso8601String();
+            $this->write($record);
+
+            return true;
+        });
+    }
+
+    public function releaseWorkflowAdvance(string $id, int $revision): void
+    {
+        $this->cache->lock("wireframe-workflow-claim:{$id}", 10)->block(5, function () use ($id, $revision): void {
+            $record = $this->internal($id);
+            if ($record === null || ! is_string($record['workflow_encrypted'] ?? null)) {
+                return;
+            }
+            $workflow = $this->decrypt($record['workflow_encrypted']);
+            if ((int) ($workflow['revision'] ?? 1) !== $revision) {
+                return;
+            }
+            $workflow['advancing'] = false;
+            $workflow['advancing_at'] = null;
+            $record['workflow_encrypted'] = $this->encrypt($workflow);
+            $record['updated_at'] = now()->toIso8601String();
+            $this->write($record);
+        });
+    }
+
+    /**
+     * @param  array<string,mixed>  $transition
+     * @return array<string,mixed>
+     */
+    public function applyWorkflowTransition(string $id, int $revision, array $transition): array
+    {
+        return $this->cache->lock("wireframe-workflow-update:{$id}", 10)->block(5, function () use ($id, $revision, $transition): array {
+            $record = $this->internal($id);
+            if ($record === null || ! is_string($record['workflow_encrypted'] ?? null)) {
+                throw new RuntimeException('The wireframe workflow does not exist or has expired.');
+            }
+            $current = $this->decrypt($record['workflow_encrypted']);
+            if ((int) ($current['revision'] ?? 1) !== $revision || ($current['advancing'] ?? false) !== true) {
+                return $this->publicRecord($record);
+            }
+            $workflow = is_array($transition['workflow'] ?? null) ? $transition['workflow'] : $current;
+            $workflow['revision'] = $revision + 1;
+            $workflow['advancing'] = false;
+            $workflow['advancing_at'] = null;
+            $record['workflow_encrypted'] = $this->encrypt($workflow);
+            $attempts = is_array($record['attempt_telemetry'] ?? null) ? $record['attempt_telemetry'] : [];
+            foreach ($transition['telemetry'] ?? [] as $telemetry) {
+                if (is_array($telemetry)) {
+                    $attempts[] = $telemetry;
+                }
+            }
+            $record['attempt_telemetry'] = $attempts;
+            $changes = is_array($transition['changes'] ?? null) ? $transition['changes'] : [];
+            $record = array_replace($record, $changes);
+            if (is_array($transition['result'] ?? null)) {
+                $result = $transition['result'];
+                $result['telemetry'] = $this->aggregateTelemetry($attempts);
+                $record = array_replace($record, [
+                    'status' => 'succeeded',
+                    'stage' => 'complete',
+                    'progress' => 1.0,
+                    'result_encrypted' => $this->encrypt($result),
+                    'failure' => null,
+                ]);
+            } elseif (is_array($transition['failure'] ?? null)) {
+                $record = array_replace($record, [
+                    'status' => 'failed',
+                    'stage' => 'failed',
+                    'progress' => 1.0,
+                    'failure' => $transition['failure'],
+                    'telemetry' => $attempts === [] ? null : $this->aggregateTelemetry($attempts),
+                ]);
+            }
+            $record['updated_at'] = now()->toIso8601String();
+            $this->write($record);
+
+            return $this->publicRecord($record);
+        });
     }
 
     /** @return array<string,mixed> */
@@ -225,7 +370,7 @@ final class WireframeJobStore
     /** @param array<string,mixed> $record @return array<string,mixed> */
     private function publicRecord(array $record): array
     {
-        $public = array_diff_key($record, array_flip(['attempt_telemetry', 'context_encrypted', 'provider_completion_claimed', 'provider_response_id', 'result_encrypted']));
+        $public = array_diff_key($record, array_flip(['attempt_telemetry', 'context_encrypted', 'provider_completion_claimed', 'provider_response_id', 'result_encrypted', 'workflow_encrypted']));
         if (is_string($record['result_encrypted'] ?? null)) {
             $public['result'] = $this->decrypt($record['result_encrypted']);
         }
