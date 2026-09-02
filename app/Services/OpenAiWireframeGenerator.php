@@ -1114,6 +1114,21 @@ PROMPT;
     /** @param array<string,mixed> $node @return array<string,mixed> */
     private function normalizeProviderNode(array $node): array
     {
+        $id = is_string($node['id'] ?? null) ? $node['id'] : '';
+        if (($node['type'] ?? null) === 'Text'
+            && in_array('image', explode('-', $id), true)) {
+            $content = is_string($node['content'] ?? null) && trim($node['content']) !== ''
+                ? trim($node['content'])
+                : '内容を視覚的に補足する画像';
+
+            return [
+                'type' => 'Image',
+                'id' => $id,
+                'intent' => $content,
+                'alt' => $content,
+                'aspect_ratio' => '16:9',
+            ];
+        }
         if (($node['type'] ?? null) !== 'Region') {
             return $node;
         }

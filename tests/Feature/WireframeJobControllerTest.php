@@ -550,6 +550,27 @@ final class WireframeJobControllerTest extends TestCase
         $this->assertSame('価値提案と資料請求への導入', data_get($section, 'children.3.alt'));
     }
 
+    public function test_section_completion_normalizes_text_with_image_identity_to_image_leaf(): void
+    {
+        $document = $this->heroSection();
+        $document['section']['children'][2] = WireframeV2Fixture::text(
+            'hero-image',
+            'body',
+            '導入後の業務フローを示す画面イメージ',
+        );
+        $pagePlan = $this->sectionPlan()['pages'][0];
+
+        $section = app(OpenAiWireframeGenerator::class)->completeSectionBackground(
+            $this->structuredProviderResponse('resp_text_image', $document),
+            $pagePlan,
+            $pagePlan['sections'][0],
+        );
+
+        $this->assertSame('Image', data_get($section, 'children.2.type'));
+        $this->assertSame('導入後の業務フローを示す画面イメージ', data_get($section, 'children.2.intent'));
+        $this->assertSame('導入後の業務フローを示す画面イメージ', data_get($section, 'children.2.alt'));
+    }
+
     public function test_section_completion_deterministically_supplies_a_planned_missing_form(): void
     {
         $document = $this->contactSection();
