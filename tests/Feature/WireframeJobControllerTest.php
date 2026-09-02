@@ -472,6 +472,61 @@ final class WireframeJobControllerTest extends TestCase
             ->assertJsonPath('type', 'generation_mode_requires_async');
     }
 
+    public function test_section_parallel_mode_repairs_only_the_invalid_section_once(): void
+    {
+        $invalidHero = $this->heroSection();
+        array_splice($invalidHero['section']['children'], 2, 1);
+        Http::fake([
+            'https://api.openai.test/v1/responses' => Http::sequence()
+                ->push(['id' => 'resp_plan_repair', 'status' => 'queued'])
+                ->push(['id' => 'resp_section_hero_invalid', 'status' => 'queued'])
+                ->push(['id' => 'resp_section_contact_valid', 'status' => 'queued'])
+                ->push(['id' => 'resp_section_hero_repaired', 'status' => 'queued'])
+                ->push(['id' => 'resp_review_repair', 'status' => 'queued']),
+            'https://api.openai.test/v1/responses/resp_plan_repair' => Http::response(
+                $this->structuredProviderResponse('resp_plan_repair', $this->sectionPlan()),
+            ),
+            'https://api.openai.test/v1/responses/resp_section_hero_invalid' => Http::response(
+                $this->structuredProviderResponse('resp_section_hero_invalid', $invalidHero),
+            ),
+            'https://api.openai.test/v1/responses/resp_section_contact_valid' => Http::response(
+                $this->structuredProviderResponse('resp_section_contact_valid', $this->contactSection()),
+            ),
+            'https://api.openai.test/v1/responses/resp_section_hero_repaired' => Http::response(
+                $this->structuredProviderResponse('resp_section_hero_repaired', $this->heroSection()),
+            ),
+            'https://api.openai.test/v1/responses/resp_review_repair' => Http::response(
+                $this->structuredProviderResponse('resp_review_repair', ['version' => 1, 'findings' => [], 'operations' => []]),
+            ),
+        ]);
+        $started = $this->withToken('test-token')
+            ->withHeader('Idempotency-Key', 'section-parallel-repair-0001')
+            ->postJson('/api/v1/wireframe-jobs', $this->sectionParallelPayload())
+            ->assertAccepted();
+        $path = '/api/v1/wireframe-jobs/'.$started->json('id');
+
+        $this->withToken('test-token')->getJson($path)->assertOk()->assertJsonPath('stage', 'sections');
+        $this->withToken('test-token')->getJson($path)->assertOk()->assertJsonPath('stage', 'sections');
+        $this->withToken('test-token')->getJson($path)->assertOk()->assertJsonPath('stage', 'sections');
+        $this->withToken('test-token')->getJson($path)->assertOk()->assertJsonPath('stage', 'review');
+        $this->withToken('test-token')->getJson($path)
+            ->assertOk()
+            ->assertJsonPath('status', 'succeeded')
+            ->assertJsonPath('result.telemetry.provider_request_count', 5)
+            ->assertJsonPath('result.telemetry.semantic_attempt_count', 5)
+            ->assertJsonPath('result.telemetry.input_tokens', 500);
+
+        Http::assertSent(function ($request): bool {
+            if ($request->url() !== 'https://api.openai.test/v1/responses' || $request->method() !== 'POST') {
+                return false;
+            }
+            $input = json_decode((string) $request['input'], true);
+
+            return str_contains((string) ($input['validation_feedback'] ?? ''), 'required Image leaf was missing');
+        });
+        Http::assertSentCount(10);
+    }
+
     /** @return array<string,mixed> */
     private function payload(): array
     {

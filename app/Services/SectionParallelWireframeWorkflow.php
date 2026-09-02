@@ -75,6 +75,7 @@ final class SectionParallelWireframeWorkflow
                     'section_plan' => $sectionPlan,
                     'response_id' => null,
                     'provider_status' => 'unstarted',
+                    'semantic_attempt' => 1,
                 ];
             }
         }
@@ -145,6 +146,24 @@ final class SectionParallelWireframeWorkflow
                     $task['section_plan'],
                 );
             } catch (InvalidWireframeException $exception) {
+                if ((int) ($task['semantic_attempt'] ?? 1) < 2) {
+                    $telemetry[] = $this->generator->backgroundTelemetry($response);
+                    $retry = $this->generator->startSectionBackground(
+                        $payload['site_ast'],
+                        $payload['brief'],
+                        (string) $payload['locale'],
+                        $workflow['plan'],
+                        $task['page_plan'],
+                        $task['section_plan'],
+                        (string) $payload['execution_profile'],
+                        $exception->getMessage(),
+                    );
+                    $tasks[$key]['response_id'] = $retry['id'];
+                    $tasks[$key]['provider_status'] = $retry['status'];
+                    $tasks[$key]['semantic_attempt'] = 2;
+
+                    continue;
+                }
                 $workflow['section_tasks'] = $tasks;
 
                 return $this->beginSectionDrain($workflow, $key, $response, 'invalid_wireframe_section', $exception->getMessage());

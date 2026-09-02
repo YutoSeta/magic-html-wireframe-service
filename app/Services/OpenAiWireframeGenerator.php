@@ -288,7 +288,7 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
     }
 
     /** @param array<string,mixed> $siteAst @param array<string,mixed> $brief @param array<string,mixed> $plan @param array<string,mixed> $pagePlan @param array<string,mixed> $sectionPlan @return array<string,mixed> */
-    public function startSectionBackground(array $siteAst, array $brief, string $locale, array $plan, array $pagePlan, array $sectionPlan, string $executionProfile): array
+    public function startSectionBackground(array $siteAst, array $brief, string $locale, array $plan, array $pagePlan, array $sectionPlan, string $executionProfile, ?string $validationFeedback = null): array
     {
         return $this->startStructuredBackground(
             $this->sectionSchema($pagePlan, $sectionPlan),
@@ -300,6 +300,7 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
                 'site_plan' => $plan,
                 'current_page' => $pagePlan,
                 'current_section' => $sectionPlan,
+                'validation_feedback' => $validationFeedback,
             ],
             $executionProfile,
             'wireframe_section',
@@ -340,11 +341,25 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
         };
         $walk($section);
         $expectedHeadingCount = ($sectionPlan['contains_heading_1'] ?? false) === true ? 1 : 0;
-        if ($facts['heading_1'] !== $expectedHeadingCount
-            || (($sectionPlan['requires_form'] ?? false) === true && $facts['form'] === 0)
-            || (($sectionPlan['requires_image'] ?? false) === true && $facts['image'] === 0)
-            || $facts['nodes'] > 60) {
-            throw new InvalidWireframeException('The generated section did not satisfy its bounded semantic requirements.');
+        $violations = [];
+        if ($facts['heading_1'] !== $expectedHeadingCount) {
+            $violations[] = "heading-1 expected {$expectedHeadingCount}, received {$facts['heading_1']}";
+        }
+        if (($sectionPlan['requires_form'] ?? false) === true && $facts['form'] === 0) {
+            $violations[] = 'required semantic form was missing';
+        }
+        if (($sectionPlan['requires_image'] ?? false) === true && $facts['image'] === 0) {
+            $violations[] = 'required Image leaf was missing';
+        }
+        if ($facts['nodes'] > 60) {
+            $violations[] = "node count {$facts['nodes']} exceeded 60";
+        }
+        if ($violations !== []) {
+            throw new InvalidWireframeException(sprintf(
+                'Section [%s] did not satisfy its bounded semantic requirements: %s.',
+                (string) ($sectionPlan['id'] ?? 'unknown'),
+                implode('; ', $violations),
+            ));
         }
 
         return $section;
@@ -607,7 +622,7 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
 
     private function sectionInstructions(): string
     {
-        return 'Generate only the current semantic section while using the complete Site AST, brief, site plan, and page plan as context. Preserve the planned section ID, layout, journey stage, and emphasis exactly. Produce concrete customer-facing copy and typed leaves. Honor contains_heading_1 exactly: one heading-1 when true and none when false. When requires_form is true, include a semantic form with introductory content, labeled controls, consent or helper copy when appropriate, and exactly one submit button. When requires_image is true, include at least one Image leaf with useful intent and alt text. Keep the section under 60 nodes and avoid repeating content owned by other planned sections. Do not output HTML, CSS, visual skin, remote URLs, or explanations.';
+        return 'Generate only the current semantic section while using the complete Site AST, brief, site plan, and page plan as context. Preserve the planned section ID, layout, journey stage, and emphasis exactly. Produce concrete customer-facing copy and typed leaves. Honor contains_heading_1 exactly: one heading-1 when true and none when false. When requires_form is true, include a semantic form with introductory content, labeled controls, consent or helper copy when appropriate, and exactly one submit button. When requires_image is true, include at least one Image leaf with useful intent and alt text. Keep the section under 60 nodes and avoid repeating content owned by other planned sections. When validation_feedback is present, repair exactly those stated violations without weakening the plan. Do not output HTML, CSS, visual skin, remote URLs, or explanations.';
     }
 
     private function reviewInstructions(): string
