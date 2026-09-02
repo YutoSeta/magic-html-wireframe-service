@@ -14,11 +14,18 @@ final class AuthenticateService
      *
      * @param  Closure(Request): (Response)  $next
      */
-    public function handle(Request $request, Closure $next): Response
+    public function handle(Request $request, Closure $next, ?string $scope = null): Response
     {
-        $expected = (string) config('wireframe.service_token', '');
         $provided = (string) $request->bearerToken();
-        if ($expected === '' || $provided === '' || ! hash_equals($expected, $provided)) {
+        $expectedTokens = array_filter([
+            (string) config('wireframe.service_token', ''),
+            $scope === 'layout' ? (string) config('wireframe.layout_service_token', '') : '',
+        ], static fn (string $token): bool => $token !== '');
+        $authenticated = $provided !== '' && array_any(
+            $expectedTokens,
+            static fn (string $expected): bool => hash_equals($expected, $provided),
+        );
+        if (! $authenticated) {
             return Problem::response($request, 401, 'unauthorized', 'A valid bearer token is required.');
         }
 

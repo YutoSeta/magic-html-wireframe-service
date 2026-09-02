@@ -12,7 +12,7 @@
         "yutoseta/laravel-admin": "^0.1.1",
         "yutoseta/magic-html-contracts": "^1.2",
         "yutoseta/magic-html-design-core": "^1.4",
-        "yutoseta/magic-html-layout-ast": "^1.2"
+        "yutoseta/magic-html-layout-ast": "^1.3"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",

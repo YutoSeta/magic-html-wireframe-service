@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use YutoSeta\MagicHtmlLayout\LayoutAstValidator;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -18,6 +19,13 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(WireframeGenerator::class, OpenAiWireframeGenerator::class);
+        // A region's explicit algorithm, template, gap and mandated compact
+        // reflow are four bounded geometry declarations. Keep the generic
+        // instance cap strict while allowing that complete formal Layout unit.
+        $this->app->singleton(
+            LayoutAstValidator::class,
+            static fn (): LayoutAstValidator => new LayoutAstValidator(maxInstanceProperties: 4),
+        );
     }
 
     /**
