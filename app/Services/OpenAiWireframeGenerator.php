@@ -423,6 +423,7 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
                 }
                 $sections[] = $sectionResults[$taskKey];
             }
+            $sections = $this->deduplicateSectionNodeIds($sections);
             $headerChildren = [[
                 'type' => 'Text', 'id' => "chrome-{$pageKey}-brand", 'role' => 'label', 'content' => $organization,
             ]];
@@ -465,6 +466,63 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
         }
 
         return ['version' => 2, 'locale' => $locale, 'pages' => $pages];
+    }
+
+    /** @param list<array<string,mixed>> $sections @return list<array<string,mixed>> */
+    private function deduplicateSectionNodeIds(array $sections): array
+    {
+        $used = [];
+        foreach ($sections as $sectionIndex => $section) {
+            $sectionId = is_string($section['id'] ?? null) ? $section['id'] : "section-{$sectionIndex}";
+            $renames = [];
+            $rename = function (array $node) use (&$rename, &$used, &$renames, $sectionId): array {
+                $id = is_string($node['id'] ?? null) ? $node['id'] : null;
+                if ($id !== null) {
+                    $candidate = $id;
+                    if (isset($used[$candidate])) {
+                        $candidate = "{$sectionId}-{$id}";
+                        $suffix = 2;
+                        while (isset($used[$candidate])) {
+                            $candidate = "{$sectionId}-{$id}-{$suffix}";
+                            $suffix++;
+                        }
+                        $renames[$id] = $candidate;
+                        $node['id'] = $candidate;
+                    }
+                    $used[$candidate] = true;
+                }
+                foreach ($node['children'] ?? [] as $index => $child) {
+                    if (is_array($child)) {
+                        $node['children'][$index] = $rename($child);
+                    }
+                }
+
+                return $node;
+            };
+            $section = $rename($section);
+            if ($renames !== []) {
+                $rewriteAnchors = function (array $node) use (&$rewriteAnchors, $renames): array {
+                    $href = $node['href'] ?? null;
+                    if (($node['type'] ?? null) === 'Link' && is_string($href) && str_starts_with($href, '#')) {
+                        $fragment = substr($href, 1);
+                        if (isset($renames[$fragment])) {
+                            $node['href'] = '#'.$renames[$fragment];
+                        }
+                    }
+                    foreach ($node['children'] ?? [] as $index => $child) {
+                        if (is_array($child)) {
+                            $node['children'][$index] = $rewriteAnchors($child);
+                        }
+                    }
+
+                    return $node;
+                };
+                $section = $rewriteAnchors($section);
+            }
+            $sections[$sectionIndex] = $section;
+        }
+
+        return $sections;
     }
 
     /** @param array<string,mixed> $siteAst @param array<string,mixed> $brief @param array<string,mixed> $assembled @return array<string,mixed> */

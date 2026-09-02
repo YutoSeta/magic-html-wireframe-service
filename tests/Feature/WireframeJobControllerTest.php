@@ -379,6 +379,8 @@ final class WireframeJobControllerTest extends TestCase
         config()->set('wireframe.jobs.section_start_batch', 6);
         $heroSection = $this->heroSection();
         $heroSection['section']['children'][3]['href'] = '#資料請求';
+        $contactSection = $this->contactSection();
+        $contactSection['section']['children'][0]['id'] = 'hero-title';
         Http::fake([
             'https://api.openai.test/v1/responses' => Http::sequence()
                 ->push(['id' => 'resp_plan', 'status' => 'queued'])
@@ -392,7 +394,7 @@ final class WireframeJobControllerTest extends TestCase
                 $this->structuredProviderResponse('resp_section_hero', $heroSection),
             ),
             'https://api.openai.test/v1/responses/resp_section_contact' => Http::response(
-                $this->structuredProviderResponse('resp_section_contact', $this->contactSection()),
+                $this->structuredProviderResponse('resp_section_contact', $contactSection),
             ),
             'https://api.openai.test/v1/responses/resp_review' => Http::response(
                 $this->structuredProviderResponse('resp_review', [
@@ -441,6 +443,7 @@ final class WireframeJobControllerTest extends TestCase
             ->assertJsonPath('result.wireframe_ast.pages.0.root.children.1.children.1.id', 'contact-section')
             ->assertJsonPath('result.wireframe_ast.pages.0.root.children.1.children.0.children.1.content', '導入判断に必要な機能・費用・進め方を一冊で確認できます。')
             ->assertJsonPath('result.wireframe_ast.pages.0.root.children.1.children.0.children.3.href', '#contact-section')
+            ->assertJsonPath('result.wireframe_ast.pages.0.root.children.1.children.1.children.0.id', 'contact-section-hero-title')
             ->assertJsonPath('result.generation.mode', 'section_parallel')
             ->assertJsonPath('result.generation.section_count', 2)
             ->assertJsonPath('result.generation.review_finding_count', 1)
