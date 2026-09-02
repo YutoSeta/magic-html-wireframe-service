@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Exceptions\InvalidWireframeException;
 use App\Services\Contracts\ReportsWireframeTelemetry;
 use App\Services\Contracts\WireframeGenerator;
+use App\Support\ExecutionProfile;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
@@ -18,11 +19,15 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
      */
     private ?array $telemetry = null;
 
-    public function __construct(private readonly WireframeValidator $validator) {}
+    public function __construct(
+        private readonly WireframeValidator $validator,
+        private readonly ExecutionProfile $executionProfiles,
+    ) {}
 
     /** @param array<string,mixed> $siteAst @param array<string,mixed> $brief @return array<string,mixed> */
-    public function generate(array $siteAst, array $brief, string $locale, int $wireframeAstVersion = 1): array
+    public function generate(array $siteAst, array $brief, string $locale, int $wireframeAstVersion = 1, string $executionProfile = 'fast'): array
     {
+        $profile = $this->executionProfiles->resolve($executionProfile);
         $this->validator->validateGenerationInput($siteAst, $locale, $wireframeAstVersion);
         $this->telemetry = null;
         $providerTelemetry = new OpenAiTelemetry((array) config('services.openai.rate_card', []));
@@ -44,7 +49,7 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
             $startedAt = hrtime(true);
             try {
                 $response = $request->post((string) config('services.openai.url'), [
-                    'model' => (string) config('services.openai.model'),
+                    'model' => $profile['model'],
                     'instructions' => $this->instructions($wireframeAstVersion),
                     'input' => json_encode([
                         'site_ast' => $siteAst,
@@ -53,7 +58,7 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
                         'wireframe_ast_version' => $wireframeAstVersion,
                         'validation_feedback' => $feedback,
                     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
-                    'reasoning' => ['effort' => (string) config('services.openai.reasoning_effort', 'medium')],
+                    'reasoning' => ['effort' => $profile['reasoning_effort']],
                     'text' => ['format' => [
                         'type' => 'json_schema',
                         'name' => 'wireframes',
@@ -62,7 +67,7 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
                     ]],
                     'max_output_tokens' => $wireframeAstVersion === 2 ? 64000 : 12000,
                     'store' => false,
-                    'metadata' => ['stage' => 'wireframes'],
+                    'metadata' => ['stage' => 'wireframes', 'execution_profile' => $profile['id']],
                 ]);
             } finally {
                 $providerTelemetry->recordProviderDuration(hrtime(true) - $startedAt);
@@ -71,7 +76,7 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
             if (! $response->successful()) {
                 Log::warning('Wireframe provider rejected request.', [
                     'provider' => 'openai',
-                    'model' => $this->identifier(config('services.openai.model')),
+                    'model' => $this->identifier($profile['model']),
                     'status' => $response->status(),
                     'request_id' => $this->identifier($response->header('x-request-id')),
                     'error_type' => $this->identifier($response->json('error.type')),
@@ -125,11 +130,13 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
         string $locale,
         int $wireframeAstVersion = 1,
         ?string $validationFeedback = null,
+        string $executionProfile = 'fast',
     ): array {
+        $profile = $this->executionProfiles->resolve($executionProfile);
         $this->validator->validateGenerationInput($siteAst, $locale, $wireframeAstVersion);
         $response = $this->providerRequest()->post(
             (string) config('services.openai.url'),
-            $this->providerPayload($siteAst, $brief, $locale, $wireframeAstVersion, $validationFeedback, true),
+            $this->providerPayload($siteAst, $brief, $locale, $wireframeAstVersion, $validationFeedback, true, $profile),
         );
         $this->assertSuccessfulProviderResponse($response);
         $providerResponse = $response->json();
@@ -207,9 +214,10 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
         int $wireframeAstVersion,
         ?string $feedback,
         bool $background,
+        array $profile,
     ): array {
         return [
-            'model' => (string) config('services.openai.model'),
+            'model' => $profile['model'],
             'instructions' => $this->instructions($wireframeAstVersion),
             'input' => json_encode([
                 'site_ast' => $siteAst,
@@ -218,7 +226,7 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
                 'wireframe_ast_version' => $wireframeAstVersion,
                 'validation_feedback' => $feedback,
             ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
-            'reasoning' => ['effort' => (string) config('services.openai.reasoning_effort', 'medium')],
+            'reasoning' => ['effort' => $profile['reasoning_effort']],
             'text' => ['format' => [
                 'type' => 'json_schema',
                 'name' => 'wireframes',
@@ -228,7 +236,7 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
             'max_output_tokens' => $wireframeAstVersion === 2 ? 64000 : 12000,
             'background' => $background,
             'store' => false,
-            'metadata' => ['stage' => 'wireframes'],
+            'metadata' => ['stage' => 'wireframes', 'execution_profile' => $profile['id']],
         ];
     }
 

@@ -19,7 +19,6 @@ final class OpenAiWireframeGeneratorTest extends TestCase
             'wireframe.idempotency.store' => 'array',
             'services.openai.key' => 'test-openai-api-key',
             'services.openai.url' => 'https://api.openai.test/v1/responses',
-            'services.openai.model' => 'gpt-5.6',
             'services.openai.retry_delays_ms' => [],
             'services.openai.rate_card' => $this->rateCard(),
         ]);
@@ -140,7 +139,7 @@ final class OpenAiWireframeGeneratorTest extends TestCase
             ->once()
             ->with('Wireframe provider rejected request.', Mockery::on(fn (array $context): bool => $context === [
                 'provider' => 'openai',
-                'model' => 'gpt-5.6',
+                'model' => 'gpt-5.6-luna',
                 'status' => 400,
                 'request_id' => 'req_safe_123',
                 'error_type' => 'invalid_request_error',
@@ -148,6 +147,9 @@ final class OpenAiWireframeGeneratorTest extends TestCase
                 'error_param' => 'max_output_tokens',
             ]));
         Http::assertSentCount(1);
+        Http::assertSent(fn ($request): bool => $request['model'] === 'gpt-5.6-luna'
+            && $request['reasoning']['effort'] === 'low'
+            && $request['metadata']['execution_profile'] === 'fast');
     }
 
     public function test_v1_invalid_json_keeps_the_single_call_provider_failure_contract(): void

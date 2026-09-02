@@ -395,13 +395,17 @@ final class RecordingWireframeGenerator implements WireframeGenerator
     /** @var list<int> */
     public array $versions = [];
 
+    /** @var list<string> */
+    public array $profiles = [];
+
     public function __construct(private readonly Closure $callback) {}
 
-    public function generate(array $siteAst, array $brief, string $locale, int $wireframeAstVersion = 1): array
+    public function generate(array $siteAst, array $brief, string $locale, int $wireframeAstVersion = 1, string $executionProfile = 'fast'): array
     {
         $this->calls++;
         $this->versions[] = $wireframeAstVersion;
+        $this->profiles[] = $executionProfile;
 
-        return ($this->callback)($siteAst, $this->calls, $brief, $locale, $wireframeAstVersion);
+        return ($this->callback)($siteAst, $this->calls, $brief, $locale, $wireframeAstVersion, $executionProfile);
     }
 }

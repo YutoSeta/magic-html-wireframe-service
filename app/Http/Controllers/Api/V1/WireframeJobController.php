@@ -31,6 +31,7 @@ final class WireframeJobController extends Controller
                     $payload['brief'],
                     (string) $payload['locale'],
                     (int) $payload['wireframe_ast_version'],
+                    executionProfile: (string) $payload['execution_profile'],
                 );
                 $claim['job'] = $jobs->started(
                     (string) $claim['job']['id'],
@@ -104,6 +105,7 @@ final class WireframeJobController extends Controller
                         (string) $payload['locale'],
                         (int) $payload['wireframe_ast_version'],
                         $exception->getMessage(),
+                        (string) $payload['execution_profile'],
                     );
                     $record = $jobs->started(
                         $job,

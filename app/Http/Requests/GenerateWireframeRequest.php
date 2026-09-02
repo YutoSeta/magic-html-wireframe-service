@@ -23,6 +23,7 @@ final class GenerateWireframeRequest extends ContractRequest
             'brief.materials' => ['sometimes', 'array', 'max:30'],
             'brief.materials.*' => ['string', 'max:8000'],
             'locale' => ['sometimes', 'string', 'min:2', 'max:20'],
+            'execution_profile' => ['sometimes', 'string', 'in:fast,balanced,quality'],
         ];
     }
 
@@ -58,6 +59,7 @@ final class GenerateWireframeRequest extends ContractRequest
         $this->merge([
             'locale' => $this->input('locale', 'ja'),
             'wireframe_ast_version' => $this->input('wireframe_ast_version', 1),
+            'execution_profile' => $this->input('execution_profile', 'fast'),
         ]);
     }
 }

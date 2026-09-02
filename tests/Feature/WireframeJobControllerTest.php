@@ -17,7 +17,6 @@ final class WireframeJobControllerTest extends TestCase
             'wireframe.idempotency.store' => 'array',
             'services.openai.key' => 'test-openai-api-key',
             'services.openai.url' => 'https://api.openai.test/v1/responses',
-            'services.openai.model' => 'gpt-5.6',
             'services.openai.retry_delays_ms' => [],
         ]);
         Cache::store('array')->clear();
@@ -85,6 +84,9 @@ final class WireframeJobControllerTest extends TestCase
 
             return $request['background'] === true
                 && $request['store'] === false
+                && $request['model'] === 'gpt-5.6-luna'
+                && $request['reasoning']['effort'] === 'low'
+                && $request['metadata']['execution_profile'] === 'fast'
                 && $request['text']['format']['strict'] === true
                 && $request['text']['format']['schema']['properties']['version']['type'] === 'integer';
         });

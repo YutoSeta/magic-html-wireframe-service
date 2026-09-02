@@ -29,6 +29,7 @@ final class WireframeController extends Controller
                 $request->validated('brief'),
                 $request->validated('locale'),
                 (int) $request->validated('wireframe_ast_version'),
+                (string) $request->validated('execution_profile'),
             );
         } catch (IdempotencyConflictException $exception) {
             return Problem::response($request, 409, 'idempotency_conflict', $exception->getMessage());

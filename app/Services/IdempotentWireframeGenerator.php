@@ -38,6 +38,7 @@ final class IdempotentWireframeGenerator
         array $brief,
         string $locale,
         int $wireframeAstVersion = 1,
+        string $executionProfile = 'fast',
     ): array {
         $keyHash = hash('sha256', $idempotencyKey);
         $requestHash = hash('sha256', "wireframes\0{$contractVersion}\0{$requestBytes}");
@@ -52,7 +53,7 @@ final class IdempotentWireframeGenerator
         }
 
         try {
-            $wireframe = $this->generator->generate($siteAst, $brief, $locale, $wireframeAstVersion);
+            $wireframe = $this->generator->generate($siteAst, $brief, $locale, $wireframeAstVersion, $executionProfile);
         } catch (Throwable $exception) {
             $this->abandon($keyHash, $requestHash);
 
