@@ -340,6 +340,18 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
             }
         };
         $walk($section);
+        if (($sectionPlan['requires_image'] ?? false) === true && $facts['image'] === 0) {
+            $purpose = is_string($sectionPlan['purpose'] ?? null) ? $sectionPlan['purpose'] : 'セクションの内容';
+            $section['children'][] = [
+                'type' => 'Image',
+                'id' => (string) $sectionPlan['id'].'-image',
+                'intent' => $purpose.'を視覚的に補足する画像',
+                'alt' => $purpose,
+                'aspect_ratio' => '16:9',
+            ];
+            $facts['image'] = 1;
+            $facts['nodes']++;
+        }
         $expectedHeadingCount = ($sectionPlan['contains_heading_1'] ?? false) === true ? 1 : 0;
         $violations = [];
         if ($facts['heading_1'] !== $expectedHeadingCount) {
@@ -347,9 +359,6 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
         }
         if (($sectionPlan['requires_form'] ?? false) === true && $facts['form'] === 0) {
             $violations[] = 'required semantic form was missing';
-        }
-        if (($sectionPlan['requires_image'] ?? false) === true && $facts['image'] === 0) {
-            $violations[] = 'required Image leaf was missing';
         }
         if ($facts['nodes'] > 60) {
             $violations[] = "node count {$facts['nodes']} exceeded 60";

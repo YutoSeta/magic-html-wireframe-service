@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Services\OpenAiWireframeGenerator;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Tests\Support\WireframeV2Fixture;
@@ -475,7 +476,7 @@ final class WireframeJobControllerTest extends TestCase
     public function test_section_parallel_mode_repairs_only_the_invalid_section_once(): void
     {
         $invalidHero = $this->heroSection();
-        array_splice($invalidHero['section']['children'], 2, 1);
+        array_shift($invalidHero['section']['children']);
         Http::fake([
             'https://api.openai.test/v1/responses' => Http::sequence()
                 ->push(['id' => 'resp_plan_repair', 'status' => 'queued'])
@@ -522,9 +523,27 @@ final class WireframeJobControllerTest extends TestCase
             }
             $input = json_decode((string) $request['input'], true);
 
-            return str_contains((string) ($input['validation_feedback'] ?? ''), 'required Image leaf was missing');
+            return str_contains((string) ($input['validation_feedback'] ?? ''), 'heading-1 expected 1, received 0');
         });
         Http::assertSentCount(10);
+    }
+
+    public function test_section_completion_deterministically_supplies_a_planned_missing_image_leaf(): void
+    {
+        $document = $this->heroSection();
+        array_splice($document['section']['children'], 2, 1);
+        $pagePlan = $this->sectionPlan()['pages'][0];
+        $sectionPlan = $pagePlan['sections'][0];
+
+        $section = app(OpenAiWireframeGenerator::class)->completeSectionBackground(
+            $this->structuredProviderResponse('resp_missing_image', $document),
+            $pagePlan,
+            $sectionPlan,
+        );
+
+        $this->assertSame('Image', data_get($section, 'children.3.type'));
+        $this->assertSame('hero-section-image', data_get($section, 'children.3.id'));
+        $this->assertSame('価値提案と資料請求への導入', data_get($section, 'children.3.alt'));
     }
 
     /** @return array<string,mixed> */
