@@ -88,7 +88,42 @@ final class WireframeJobController extends Controller
                     'wireframe_ast' => $completed['wireframe'],
                     'telemetry' => $completed['telemetry'],
                 ]);
+            } elseif (($retryFeedback = $generator->outputLimitRetryFeedback($providerResponse)) !== null) {
+                if (! $jobs->claimProviderCompletion($job, $context['provider_response_id'], $context['semantic_attempt'])) {
+                    return response()->json($jobs->find($job), headers: ['Cache-Control' => 'private, no-store']);
+                }
+                $completionClaimed = true;
+                $jobs->recordAttemptTelemetry($job, $generator->backgroundTelemetry($providerResponse));
+                if ($context['semantic_attempt'] >= 2) {
+                    $record = $jobs->failed($job, 'wireframe_output_limit_exceeded', 'The wireframe provider exhausted its output limit after one bounded concise retry.');
+                } elseif (! $jobs->claimSemanticRetry($job, $context['provider_response_id'], $context['semantic_attempt'])) {
+                    return response()->json($jobs->find($job), headers: ['Cache-Control' => 'private, no-store']);
+                } else {
+                    $payload = $context['payload'];
+                    try {
+                        $providerResponse = $generator->startBackground(
+                            $payload['site_ast'],
+                            $payload['brief'],
+                            (string) $payload['locale'],
+                            (int) $payload['wireframe_ast_version'],
+                            $retryFeedback,
+                            (string) $payload['execution_profile'],
+                        );
+                        $record = $jobs->started(
+                            $job,
+                            (string) $providerResponse['id'],
+                            (string) $providerResponse['status'],
+                        );
+                    } catch (RuntimeException) {
+                        $record = $jobs->failed($job, 'wireframe_provider_failed', 'The background wireframe concise retry could not be started.');
+                    }
+                }
             } else {
+                if (! $jobs->claimProviderCompletion($job, $context['provider_response_id'], $context['semantic_attempt'])) {
+                    return response()->json($jobs->find($job), headers: ['Cache-Control' => 'private, no-store']);
+                }
+                $completionClaimed = true;
+                $jobs->recordAttemptTelemetry($job, $generator->backgroundTelemetry($providerResponse));
                 $record = $jobs->failed($job, 'wireframe_generation_failed', 'The background wireframe generation reached a terminal provider state without a valid result.');
             }
         } catch (InvalidWireframeException $exception) {

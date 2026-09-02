@@ -127,7 +127,14 @@ final class WireframeJobControllerTest extends TestCase
             'https://api.openai.test/v1/responses/resp_background_failed' => Http::response([
                 'id' => 'resp_background_failed',
                 'status' => 'failed',
+                'model' => 'gpt-5.6-luna',
                 'error' => ['message' => 'sensitive provider detail'],
+                'usage' => [
+                    'input_tokens' => 100,
+                    'input_tokens_details' => ['cached_tokens' => 10],
+                    'output_tokens' => 20,
+                    'output_tokens_details' => ['reasoning_tokens' => 5],
+                ],
             ]),
         ]);
 
@@ -140,9 +147,98 @@ final class WireframeJobControllerTest extends TestCase
             ->getJson('/api/v1/wireframe-jobs/'.$started->json('id'))
             ->assertOk()
             ->assertJsonPath('status', 'failed')
-            ->assertJsonPath('failure.type', 'wireframe_generation_failed');
+            ->assertJsonPath('failure.type', 'wireframe_generation_failed')
+            ->assertJsonPath('telemetry.output_tokens', 20)
+            ->assertJsonPath('telemetry.semantic_attempt_count', 1);
 
         $this->assertStringNotContainsString('sensitive provider detail', (string) $response->getContent());
+    }
+
+    public function test_output_limit_starts_one_bounded_concise_retry_and_aggregates_usage(): void
+    {
+        Http::fake([
+            'https://api.openai.test/v1/responses' => Http::sequence()
+                ->push(['id' => 'resp_background_output_limit', 'status' => 'queued'])
+                ->push(['id' => 'resp_background_concise', 'status' => 'queued']),
+            'https://api.openai.test/v1/responses/resp_background_output_limit' => Http::response(
+                $this->outputLimitProviderResponse('resp_background_output_limit'),
+            ),
+            'https://api.openai.test/v1/responses/resp_background_concise' => Http::response(
+                $this->completedProviderResponse('resp_background_concise'),
+            ),
+        ]);
+
+        $started = $this->withToken('test-token')
+            ->withHeader('Idempotency-Key', 'background-wireframe-output-limit-0001')
+            ->postJson('/api/v1/wireframe-jobs', $this->payload())
+            ->assertAccepted();
+        $path = '/api/v1/wireframe-jobs/'.$started->json('id');
+
+        $this->withToken('test-token')
+            ->getJson($path)
+            ->assertOk()
+            ->assertJsonPath('status', 'queued')
+            ->assertJsonPath('semantic_attempt', 2);
+
+        $this->withToken('test-token')
+            ->getJson($path)
+            ->assertOk()
+            ->assertJsonPath('status', 'succeeded')
+            ->assertJsonPath('result.telemetry.response_id', 'resp_background_concise')
+            ->assertJsonPath('result.telemetry.input_tokens', 3288)
+            ->assertJsonPath('result.telemetry.output_tokens', 64900)
+            ->assertJsonPath('result.telemetry.reasoning_tokens', 205)
+            ->assertJsonPath('result.telemetry.provider_request_count', 2)
+            ->assertJsonPath('result.telemetry.semantic_attempt_count', 2);
+
+        Http::assertSent(function ($request): bool {
+            if ($request->url() !== 'https://api.openai.test/v1/responses' || $request->method() !== 'POST') {
+                return false;
+            }
+            $input = json_decode((string) $request['input'], true);
+
+            return str_contains((string) ($input['validation_feedback'] ?? ''), 'exhausted the output-token limit')
+                && str_contains((string) $request['instructions'], 'at most 120 nodes per page');
+        });
+        Http::assertSentCount(4);
+    }
+
+    public function test_second_output_limit_fails_with_specific_reason_and_complete_usage(): void
+    {
+        Http::fake([
+            'https://api.openai.test/v1/responses' => Http::sequence()
+                ->push(['id' => 'resp_background_output_limit_1', 'status' => 'queued'])
+                ->push(['id' => 'resp_background_output_limit_2', 'status' => 'queued']),
+            'https://api.openai.test/v1/responses/resp_background_output_limit_1' => Http::response(
+                $this->outputLimitProviderResponse('resp_background_output_limit_1'),
+            ),
+            'https://api.openai.test/v1/responses/resp_background_output_limit_2' => Http::response(
+                $this->outputLimitProviderResponse('resp_background_output_limit_2'),
+            ),
+        ]);
+
+        $started = $this->withToken('test-token')
+            ->withHeader('Idempotency-Key', 'background-wireframe-output-limit-twice-0001')
+            ->postJson('/api/v1/wireframe-jobs', $this->payload())
+            ->assertAccepted();
+        $path = '/api/v1/wireframe-jobs/'.$started->json('id');
+        $this->withToken('test-token')
+            ->getJson($path)
+            ->assertOk()
+            ->assertJsonPath('semantic_attempt', 2);
+
+        $this->withToken('test-token')
+            ->getJson($path)
+            ->assertOk()
+            ->assertJsonPath('status', 'failed')
+            ->assertJsonPath('failure.type', 'wireframe_output_limit_exceeded')
+            ->assertJsonPath('telemetry.input_tokens', 4176)
+            ->assertJsonPath('telemetry.output_tokens', 128000)
+            ->assertJsonPath('telemetry.reasoning_tokens', 210)
+            ->assertJsonPath('telemetry.provider_request_count', 2)
+            ->assertJsonPath('telemetry.semantic_attempt_count', 2);
+
+        Http::assertSentCount(4);
     }
 
     public function test_transient_poll_failure_keeps_the_job_resumable(): void
@@ -309,6 +405,23 @@ final class WireframeJobControllerTest extends TestCase
                 'input_tokens_details' => ['cached_tokens' => 200],
                 'output_tokens' => 900,
                 'output_tokens_details' => ['reasoning_tokens' => 100],
+            ],
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    private function outputLimitProviderResponse(string $id): array
+    {
+        return [
+            'id' => $id,
+            'status' => 'incomplete',
+            'model' => 'gpt-5.6-luna',
+            'incomplete_details' => ['reason' => 'max_output_tokens'],
+            'usage' => [
+                'input_tokens' => 2088,
+                'input_tokens_details' => ['cached_tokens' => 0],
+                'output_tokens' => 64000,
+                'output_tokens_details' => ['reasoning_tokens' => 105],
             ],
         ];
     }

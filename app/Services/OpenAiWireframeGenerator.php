@@ -195,6 +195,17 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
         return $providerTelemetry->toArray();
     }
 
+    /** @param array<string,mixed> $providerResponse */
+    public function outputLimitRetryFeedback(array $providerResponse): ?string
+    {
+        if (($providerResponse['status'] ?? null) !== 'incomplete'
+            || ($providerResponse['incomplete_details']['reason'] ?? null) !== 'max_output_tokens') {
+            return null;
+        }
+
+        return 'The previous response exhausted the output-token limit. Return one complete, concise document rather than continuing the partial response. Use at most 80 nodes per page, 240 nodes total, four nested Region levels, eight sections per page, and 240 characters per body Text node. Remove repetition before omitting required page, form, image, link, or CTA semantics.';
+    }
+
     private function providerRequest(): PendingRequest
     {
         $request = Http::withToken((string) config('services.openai.key'))
@@ -302,7 +313,7 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
         return <<<'PROMPT'
 You are a senior information architect and conversion-focused wireframe director. Produce Wireframe AST version 2 in the requested locale, grounded only in the supplied Site AST, brief, and materials. Preserve every Site AST page key, path, and title exactly once. Layout-only means skin-free, not content-free: write the real customer-facing copy required to judge hierarchy and conversion. You may reorganize content while preserving factual constraints.
 
-Use an AIDMA-aware order on conversion pages: attention, interest, desire, memory, then action. Vary rhythm with split, grid, stack, timeline-like lists, FAQ, and form structures. Put a clear promise, primary action, and trust facts above the fold; place objections and decision information before the final action. Use three deliberate CTA moments when appropriate. Every page needs exactly one heading-1 and 2 to 12 section Regions. The request may contain at most 8 pages, 300 nodes per page, and 800 nodes in total; prefer concise structures that fit comfortably within those limits.
+Use an AIDMA-aware order on conversion pages: attention, interest, desire, memory, then action. Vary rhythm with split, grid, stack, timeline-like lists, FAQ, and form structures. Put a clear promise, primary action, and trust facts above the fold; place objections and decision information before the final action. Use three deliberate CTA moments when appropriate. Every page needs exactly one heading-1 and 2 to 12 section Regions. The request may contain at most 8 pages. Keep the generated document concise: target at most 120 nodes per page and 400 nodes total, never nest Region nodes more than five levels deep, and keep each body Text node under 400 characters. Remove repetitive copy and duplicate groups before adding more nodes.
 
 Only Region may branch. Every branch must end in a concrete Text, Image, Link, Button, Input, Textarea, Select, or Checkbox leaf. Use actual labels, targets, image intent/alt text, form fields, options, helper copy, and consent links. Node IDs must agree with their declared type: any ID containing the token image is an Image node, never descriptive Text. Do not emit generic Item, Action, Title, Text, Image, Section, or placeholder-only content. Use semantic form only for an actual interactive form. Its schema deliberately separates introductory content, one-or-more labeled controls, and exactly one submit Button; populate all three faithfully. A visual inquiry section without controls is a group, never a form. Use ordered-list or unordered-list only when every direct child is a list-item Region. Images describe placement and intent only and never contain URLs.
 
