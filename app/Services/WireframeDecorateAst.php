@@ -5,6 +5,54 @@ namespace App\Services;
 final class WireframeDecorateAst
 {
     /** @return array<string,mixed> */
+    public function skinDefinition(): array
+    {
+        return [
+            'version' => 1,
+            'preset' => 'wireframe-neutral-skin-v1',
+            'canvas' => ['background' => '#ffffff', 'foreground' => '#171717'],
+            'surfaces' => [
+                'container' => 'transparent',
+                'leaf' => 'rgba(255,255,255,0.88)',
+                'image' => '#d1d5db',
+                'input' => '#f3f4f6',
+                'button' => '#171717',
+            ],
+            'link' => ['color' => '#172554', 'text_decoration' => 'underline'],
+        ];
+    }
+
+    /** @return array<string,mixed> */
+    public function decorDefinition(): array
+    {
+        return [
+            'version' => 1,
+            'preset' => 'wireframe-structure-decor-v1',
+            'borders' => [
+                'region' => ['width_px' => 1, 'style' => 'solid', 'color' => '#737373'],
+                'container' => ['width_px' => 1, 'style' => 'dashed', 'color' => '#a3a3a3'],
+                'leaf' => ['width_px' => 0, 'style' => 'none', 'color' => '#d4d4d4'],
+                'primary_action' => ['width_px' => 2, 'style' => 'solid', 'color' => '#171717'],
+            ],
+            'review_labels' => true,
+            'forbidden' => ['gradient', 'shadow', 'border_radius', 'animation', 'external_asset'],
+        ];
+    }
+
+    public function presentationCss(): string
+    {
+        $skin = $this->skinDefinition();
+        $decor = $this->decorDefinition();
+        $canvas = $skin['canvas'];
+        $surfaces = $skin['surfaces'];
+        $borders = $decor['borders'];
+
+        return <<<CSS
+@layer mh-wireframe-skin,mh-wireframe-decor;@layer mh-wireframe-skin{html{color:{$canvas['foreground']};background:{$canvas['background']};font-family:system-ui,-apple-system,"Segoe UI",sans-serif}body{background:{$canvas['background']}}[data-wf-kind="region"]{background:{$surfaces['container']}}[data-wf-kind="leaf"]{background:{$surfaces['leaf']}}.wf-image{background:{$surfaces['image']}}.wf-button,.wf-link[data-emphasis="primary"]{background:{$surfaces['button']};color:#fff;text-decoration:none}.wf-link{color:{$skin['link']['color']};text-decoration:{$skin['link']['text_decoration']}}.wf-field input:not([type="checkbox"]):not([type="radio"]),.wf-field textarea,.wf-field select{background:{$surfaces['input']};color:{$canvas['foreground']}}}@layer mh-wireframe-decor{[data-wf-kind="region"]{outline:{$borders['region']['width_px']}px {$borders['region']['style']} {$borders['region']['color']};outline-offset:-1px}[data-wf-semantic="group"],[data-wf-semantic="article"],[data-wf-semantic="aside"],[data-wf-semantic="ordered-list"],[data-wf-semantic="unordered-list"],[data-wf-semantic="list-item"],[data-wf-semantic="field-group"],[data-wf-semantic="document"],[data-wf-semantic="main"]{outline-style:{$borders['container']['style']};outline-color:{$borders['container']['color']}}.wf-link[data-emphasis="primary"],.wf-button[data-emphasis="primary"]{outline:{$borders['primary_action']['width_px']}px {$borders['primary_action']['style']} {$borders['primary_action']['color']}}.wf-field input:not([type="checkbox"]):not([type="radio"]),.wf-field textarea,.wf-field select{border:1px solid {$borders['container']['color']}}.wf-image figcaption{border-top:1px solid {$borders['leaf']['color']};background:rgba(255,255,255,.72)}}
+CSS;
+    }
+
+    /** @return array<string,mixed> */
     public function definition(): array
     {
         return [

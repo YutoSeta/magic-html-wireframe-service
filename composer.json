@@ -10,7 +10,9 @@
         "laravel/framework": "^13.17",
         "laravel/tinker": "^3.0",
         "yutoseta/laravel-admin": "^0.1.1",
-        "yutoseta/magic-html-contracts": "^1.2"
+        "yutoseta/magic-html-contracts": "^1.2",
+        "yutoseta/magic-html-design-core": "^1.4",
+        "yutoseta/magic-html-layout-ast": "^1.2"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
@@ -94,5 +96,13 @@
         "name": "magic-html-contracts",
         "type": "vcs",
         "url": "git@github.com:YutoSeta/magic-html-contracts.git"
+    },{
+        "name": "magic-html-design-core",
+        "type": "vcs",
+        "url": "https://github.com/YutoSeta/magic-html-design-core.git"
+    },{
+        "name": "magic-html-layout-ast",
+        "type": "vcs",
+        "url": "https://github.com/YutoSeta/magic-html-layout-ast.git"
     }]
 }

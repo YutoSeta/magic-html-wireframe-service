@@ -25,7 +25,7 @@ abstract class ContractRequest extends FormRequest
                 fn (string $key): bool => ! str_contains($key, '.'),
             ));
             foreach (array_diff(array_keys($this->all()), $topLevel) as $field) {
-                $validator->errors()->add((string) $field, 'This field is not part of contract 1.0.');
+                $validator->errors()->add((string) $field, 'This field is not part of the selected contract.');
             }
         }];
     }
@@ -36,7 +36,7 @@ abstract class ContractRequest extends FormRequest
             $this,
             422,
             'validation_failed',
-            'The request does not satisfy contract 1.0.',
+            'The request does not satisfy the selected contract.',
             $validator->errors()->toArray(),
         ));
     }

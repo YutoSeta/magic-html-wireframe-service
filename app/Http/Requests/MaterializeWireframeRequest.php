@@ -10,7 +10,7 @@ final class MaterializeWireframeRequest extends ContractRequest
     public function rules(): array
     {
         $rules = [
-            'contract_version' => ['required', 'in:1.0'],
+            'contract_version' => ['required', 'in:1.0,1.1'],
             'wireframe_ast' => ['required', 'array'],
             'wireframe_ast.version' => ['required', 'integer', 'in:1,2'],
             'wireframe_ast.locale' => ['required_if:wireframe_ast.version,2', 'string', 'min:2', 'max:20'],
@@ -40,6 +40,11 @@ final class MaterializeWireframeRequest extends ContractRequest
         return [
             ...parent::after(),
             function (Validator $validator): void {
+                if ((string) $this->input('contract_version') === '1.1'
+                    && (int) $this->input('wireframe_ast.version') !== 2) {
+                    $validator->errors()->add('wireframe_ast.version', 'Contract 1.1 requires Wireframe AST version 2.');
+                }
+
                 $document = json_decode($this->getContent());
                 if (! is_object($document?->wireframe_ast ?? null)) {
                     $validator->errors()->add('wireframe_ast', 'The Wireframe AST must be a JSON object.');

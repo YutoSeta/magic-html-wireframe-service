@@ -9,16 +9,19 @@ final class WireframeMaterializer
 {
     private const HANDOFF_PROFILE = 'styler-input-v1';
 
+    private const LAYOUT_HANDOFF_PROFILE = 'styler-input-v2';
+
     public function __construct(
         private readonly WireframeValidator $validator,
         private readonly WireframeDecorateAst $decorateAst,
+        private readonly WireframeLayoutCompiler $layoutCompiler,
     ) {}
 
     /**
      * @param  array<string,mixed>  $wireframe
      * @return array<string,mixed>
      */
-    public function materialize(array $wireframe): array
+    public function materialize(array $wireframe, string $contractVersion = '1.0'): array
     {
         $startedAt = hrtime(true);
         $version = ($wireframe['version'] ?? null) === 2 ? 2 : 1;
@@ -34,19 +37,35 @@ final class WireframeMaterializer
             $pages,
         )];
         $normalized = $this->validator->validate($wireframe, $siteAst, $version);
-        $decoration = $version === 2 ? $this->decorateAst->definition() : null;
+        $usesLayoutHandoff = $version === 2 && $contractVersion === '1.1';
+        $decoration = $version === 2 && ! $usesLayoutHandoff ? $this->decorateAst->definition() : null;
+        $wireframeSkin = $usesLayoutHandoff ? $this->decorateAst->skinDefinition() : null;
+        $wireframeDecor = $usesLayoutHandoff ? $this->decorateAst->decorDefinition() : null;
+        $compiledLayouts = [];
+        if ($usesLayoutHandoff) {
+            foreach ($normalized['pages'] as $page) {
+                $compiledLayouts[(string) $page['key']] = $this->layoutCompiler->compile($page);
+            }
+        }
         $sourceDigest = $version === 2
             ? hash('sha256', CanonicalJson::encode([
                 'wireframe_ast' => $normalized,
-                'wireframe_decorate_ast' => $decoration,
-                'renderer_version' => '2.2',
+                ...($usesLayoutHandoff ? [
+                    'layout_digests' => array_map(static fn (array $layout): string => $layout['ast_digest'], $compiledLayouts),
+                    'wireframe_skin_ast' => $wireframeSkin,
+                    'wireframe_decor_ast' => $wireframeDecor,
+                ] : ['wireframe_decorate_ast' => $decoration]),
+                'renderer_version' => $usesLayoutHandoff ? '3.0' : '2.2',
             ]))
             : hash('sha256', CanonicalJson::encode($normalized));
         $handoffSourceDigest = $version === 2
             ? hash('sha256', CanonicalJson::encode([
                 'wireframe_ast' => $normalized,
-                'handoff_profile' => self::HANDOFF_PROFILE,
-                'renderer_version' => '1.0',
+                'handoff_profile' => $usesLayoutHandoff ? self::LAYOUT_HANDOFF_PROFILE : self::HANDOFF_PROFILE,
+                ...($usesLayoutHandoff ? [
+                    'layout_digests' => array_map(static fn (array $layout): string => $layout['ast_digest'], $compiledLayouts),
+                ] : []),
+                'renderer_version' => $usesLayoutHandoff ? '2.0' : '1.0',
             ]))
             : null;
         $files = [];
@@ -56,6 +75,7 @@ final class WireframeMaterializer
         $usedPaths = [];
         $renderPaths = [];
         $routeToFile = [];
+        $approvedLayouts = [];
 
         foreach ($normalized['pages'] as $page) {
             $pageKey = (string) $page['key'];
@@ -68,8 +88,17 @@ final class WireframeMaterializer
         foreach ($normalized['pages'] as $page) {
             $pageKey = (string) $page['key'];
             $path = $renderPaths[$pageKey];
+            $compiledLayout = $compiledLayouts[$pageKey] ?? null;
             $content = $version === 2
-                ? $this->htmlV2Preview($page, (string) $normalized['locale'], $sourceDigest, $routeToFile)
+                ? $this->htmlV2Preview(
+                    $page,
+                    (string) $normalized['locale'],
+                    $sourceDigest,
+                    $routeToFile,
+                    is_array($compiledLayout) ? $compiledLayout['css'] : null,
+                    $usesLayoutHandoff ? $this->decorateAst->presentationCss() : null,
+                    is_array($compiledLayout) ? (string) $compiledLayout['ast_digest'] : null,
+                )
                 : $this->htmlV1($page, $sourceDigest);
             $files[] = [
                 'path' => $path,
@@ -88,6 +117,8 @@ final class WireframeMaterializer
                     (string) $normalized['locale'],
                     $handoffSourceDigest,
                     $routeToFile,
+                    $usesLayoutHandoff ? self::LAYOUT_HANDOFF_PROFILE : self::HANDOFF_PROFILE,
+                    is_array($compiledLayout) ? (string) $compiledLayout['ast_digest'] : null,
                 );
                 $handoffFiles[] = [
                     'path' => $path,
@@ -100,8 +131,24 @@ final class WireframeMaterializer
                     'size' => strlen($handoffContent),
                     'sha256' => hash('sha256', $handoffContent),
                 ];
+                if (is_array($compiledLayout)) {
+                    $approvedLayouts[] = [
+                        'page_key' => $pageKey,
+                        'path' => $path,
+                        ...$compiledLayout,
+                        'source_html_digest' => hash('sha256', trim($handoffContent)),
+                    ];
+                }
             }
         }
+
+        $layoutBundle = $usesLayoutHandoff ? [
+            'version' => 1,
+            'profile' => WireframeLayoutCompiler::PROFILE,
+            'status' => 'frozen',
+            'pages' => $approvedLayouts,
+            'digest' => hash('sha256', CanonicalJson::encode($approvedLayouts)),
+        ] : null;
 
         return [
             'source_digest' => $sourceDigest,
@@ -109,17 +156,24 @@ final class WireframeMaterializer
             'files' => $files,
             'file_manifest' => $fileManifest,
             ...($decoration !== null ? ['wireframe_decorate_ast' => $decoration] : []),
+            ...($wireframeSkin !== null ? ['wireframe_skin_ast' => $wireframeSkin] : []),
+            ...($wireframeDecor !== null ? ['wireframe_decor_ast' => $wireframeDecor] : []),
+            ...($layoutBundle !== null ? ['layout' => $layoutBundle] : []),
             ...($handoffSourceDigest !== null ? ['handoff' => [
-                'profile' => self::HANDOFF_PROFILE,
+                'profile' => $usesLayoutHandoff ? self::LAYOUT_HANDOFF_PROFILE : self::HANDOFF_PROFILE,
                 'source_digest' => $handoffSourceDigest,
                 'entry_path' => $handoffFiles[0]['path'],
                 'files' => $handoffFiles,
                 'file_manifest' => $handoffFileManifest,
+                ...($layoutBundle !== null ? [
+                    'layout_digest' => $layoutBundle['digest'],
+                    'approved_layouts' => $approvedLayouts,
+                ] : []),
             ]] : []),
             'telemetry' => [
                 'operation' => 'wireframes.materialize',
                 'renderer' => $version === 2 ? 'semantic-wireframe-html' : 'neutral-layout-html',
-                'renderer_version' => $version === 2 ? '2.2' : '1.0',
+                'renderer_version' => $version === 2 ? ($usesLayoutHandoff ? '3.0' : '2.2') : '1.0',
                 'provider' => 'deterministic',
                 'model' => null,
                 'response_id' => null,
@@ -217,12 +271,29 @@ HTML;
     }
 
     /** @param array<string,mixed> $page */
-    private function htmlV2Preview(array $page, string $locale, string $sourceDigest, array $routeToFile): string
-    {
+    private function htmlV2Preview(
+        array $page,
+        string $locale,
+        string $sourceDigest,
+        array $routeToFile,
+        ?string $layoutCss = null,
+        ?string $presentationCss = null,
+        ?string $layoutDigest = null,
+    ): string {
         $lang = $this->escape($locale);
         $title = $this->escape((string) $page['title']);
         $body = $this->node($page['root'], $routeToFile);
-        $css = $this->decorateAst->css();
+        $css = $layoutCss === null ? $this->decorateAst->css() : $layoutCss;
+        $presentation = $presentationCss === null ? '' : <<<HTML
+<style data-wireframe-presentation="wireframe-skin-decor-v1">
+{$presentationCss}
+</style>
+HTML;
+        $layoutMeta = $layoutDigest === null ? '' : "\n<meta name=\"wireframe-layout-sha256\" content=\"{$layoutDigest}\">";
+        $presentationProfile = $layoutCss === null ? 'wireframe-neutral-v1' : 'wireframe-skin-decor-v1';
+        $styleAttribute = $layoutCss === null
+            ? 'data-wireframe-presentation="wireframe-neutral-v1"'
+            : 'data-wireframe-layout="approved-wireframe-layout-v1"';
 
         return <<<HTML
 <!doctype html>
@@ -231,12 +302,13 @@ HTML;
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; font-src 'none'; connect-src 'none'; script-src 'none'; base-uri 'none'; form-action 'none'">
-<meta name="wireframe-source-sha256" content="{$sourceDigest}">
-<meta name="wireframe-decoration-profile" content="wireframe-neutral-v1">
+<meta name="wireframe-source-sha256" content="{$sourceDigest}">{$layoutMeta}
+<meta name="wireframe-decoration-profile" content="{$presentationProfile}">
 <title>{$title}</title>
-<style data-wireframe-presentation="wireframe-neutral-v1">
+<style {$styleAttribute}>
 {$css}
 </style>
+{$presentation}
 </head>
 <body>
 {$body}
@@ -246,11 +318,18 @@ HTML;
     }
 
     /** @param array<string,mixed> $page */
-    private function htmlV2Handoff(array $page, string $locale, string $sourceDigest, array $routeToFile): string
-    {
+    private function htmlV2Handoff(
+        array $page,
+        string $locale,
+        string $sourceDigest,
+        array $routeToFile,
+        string $profile = self::HANDOFF_PROFILE,
+        ?string $layoutDigest = null,
+    ): string {
         $lang = $this->escape($locale);
         $title = $this->escape((string) $page['title']);
         $body = $this->node($page['root'], $routeToFile);
+        $layoutMeta = $layoutDigest === null ? '' : "\n<meta name=\"wireframe-layout-sha256\" content=\"{$layoutDigest}\">";
 
         return <<<HTML
 <!doctype html>
@@ -259,8 +338,8 @@ HTML;
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'none'; img-src 'none'; font-src 'none'; connect-src 'none'; script-src 'none'; base-uri 'none'; form-action 'none'">
-<meta name="wireframe-source-sha256" content="{$sourceDigest}">
-<meta name="wireframe-handoff-profile" content="styler-input-v1">
+<meta name="wireframe-source-sha256" content="{$sourceDigest}">{$layoutMeta}
+<meta name="wireframe-handoff-profile" content="{$profile}">
 <title>{$title}</title>
 </head>
 <body>
@@ -311,10 +390,15 @@ HTML;
         $stage = $this->escape((string) $node['journey_stage']);
         $emphasis = $this->escape((string) $node['emphasis']);
         $magicHtmlRole = $this->regionMagicHtmlRole($semantic);
+        $magicHtmlQualifier = $this->regionMagicHtmlQualifier($semantic);
         $magicHtmlAttributes = " data-mh-role=\"{$magicHtmlRole}\"";
+        if ($magicHtmlQualifier !== '') {
+            $magicHtmlAttributes .= " data-mh-qualifier=\"{$magicHtmlQualifier}\"";
+        }
         if ($semantic === 'section') {
             $magicHtmlAttributes .= " data-mh-composition=\"{$id}\"";
         }
+        $magicHtmlAttributes .= $this->designAttributes($magicHtmlRole, $id, $this->isDesignContainer($magicHtmlRole), $magicHtmlQualifier);
         $children = implode("\n", array_map(fn (array $child): string => $this->node($child, $routeToFile), $node['children']));
         $formAttribute = $semantic === 'form' ? " m-form=\"{$id}\"" : '';
 
@@ -336,7 +420,9 @@ HTML;
         $content = $this->escape((string) $node['content']);
         $magicHtmlRole = $this->textMagicHtmlRole((string) $node['role']);
 
-        return "<{$tag} id=\"{$id}\" class=\"wf-text-{$role}\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Text\" data-mh-role=\"{$magicHtmlRole}\">{$content}</{$tag}>";
+        $designAttributes = $this->designAttributes($magicHtmlRole, $id);
+
+        return "<{$tag} id=\"{$id}\" class=\"wf-text-{$role}\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Text\" data-mh-role=\"{$magicHtmlRole}\"{$designAttributes}>{$content}</{$tag}>";
     }
 
     /** @param array<string,mixed> $node */
@@ -349,7 +435,9 @@ HTML;
             ? '<figcaption>'.$this->escape((string) $node['caption']).'</figcaption>'
             : '';
 
-        return "<figure id=\"{$id}\" class=\"wf-image\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Image\" data-aspect=\"{$aspect}\" data-mh-role=\"Image\" role=\"img\" aria-label=\"{$alt}\"><span>{$alt}</span>{$caption}</figure>";
+        $designAttributes = $this->designAttributes('Image', $id);
+
+        return "<figure id=\"{$id}\" class=\"wf-image\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Image\" data-aspect=\"{$aspect}\" data-mh-role=\"Image\"{$designAttributes} role=\"img\" aria-label=\"{$alt}\"><span>{$alt}</span>{$caption}</figure>";
     }
 
     /** @param array<string,mixed> $node */
@@ -367,7 +455,9 @@ HTML;
         $href = $this->escape($href);
         $emphasis = $this->escape((string) $node['emphasis']);
 
-        return "<a id=\"{$id}\" class=\"wf-link\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Link\" data-emphasis=\"{$emphasis}\" data-mh-role=\"Link\" href=\"{$href}\">{$label}</a>";
+        $designAttributes = $this->designAttributes('Link', $id);
+
+        return "<a id=\"{$id}\" class=\"wf-link\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Link\" data-emphasis=\"{$emphasis}\" data-mh-role=\"Link\"{$designAttributes} href=\"{$href}\">{$label}</a>";
     }
 
     /** @param array<string,mixed> $node */
@@ -378,7 +468,9 @@ HTML;
         $type = $this->escape((string) $node['button_type']);
         $emphasis = $this->escape((string) $node['emphasis']);
 
-        return "<button id=\"{$id}\" class=\"wf-button\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Button\" data-emphasis=\"{$emphasis}\" data-mh-role=\"Btn\" type=\"{$type}\">{$label}</button>";
+        $designAttributes = $this->designAttributes('Btn', $id);
+
+        return "<button id=\"{$id}\" class=\"wf-button\" data-wf-node data-wf-kind=\"leaf\" data-wf-type=\"Button\" data-emphasis=\"{$emphasis}\" data-mh-role=\"Btn\"{$designAttributes} type=\"{$type}\">{$label}</button>";
     }
 
     /** @param array<string,mixed> $node */
@@ -463,6 +555,26 @@ HTML;
             'eyebrow', 'price', 'step-number' => 'Accent',
             default => 'Desc',
         };
+    }
+
+    private function regionMagicHtmlQualifier(string $semantic): string
+    {
+        return match ($semantic) {
+            'navigation' => 'Navigation',
+            default => '',
+        };
+    }
+
+    private function designAttributes(string $role, string $id, bool $container = false, string $qualifier = ''): string
+    {
+        $key = WireframeLayoutCompiler::designKey($role, $id, $qualifier);
+
+        return ' data-mh-design="'.$key.'"'.($container ? ' data-mh-design-container' : '');
+    }
+
+    private function isDesignContainer(string $role): bool
+    {
+        return in_array($role, ['Page', 'Main', 'Header', 'Footer', 'Section', 'Group', 'Item', 'Frame', 'Form'], true);
     }
 
     private function placeholder(mixed $value): string

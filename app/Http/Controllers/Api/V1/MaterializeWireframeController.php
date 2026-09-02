@@ -15,7 +15,10 @@ final class MaterializeWireframeController extends Controller
     public function __invoke(MaterializeWireframeRequest $request, WireframeMaterializer $materializer): JsonResponse
     {
         try {
-            $result = $materializer->materialize($request->validated('wireframe_ast'));
+            $result = $materializer->materialize(
+                $request->validated('wireframe_ast'),
+                (string) $request->validated('contract_version'),
+            );
         } catch (InvalidWireframeException $exception) {
             return Problem::response($request, 422, 'invalid_wireframe', $exception->getMessage());
         }

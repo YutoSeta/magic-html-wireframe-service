@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "1c06e25f92a284e58e42524552cc59a3",
+    "content-hash": "1cb6c11eb604672c126a0dce74aa762c",
     "packages": [
         {
             "name": "brick/math",
@@ -6124,6 +6124,84 @@
                 "issues": "https://github.com/YutoSeta/magic-html-contracts/issues"
             },
             "time": "2026-08-25T18:00:10+00:00"
+        },
+        {
+            "name": "yutoseta/magic-html-design-core",
+            "version": "v1.4.3",
+            "source": {
+                "type": "git",
+                "url": "git@github.com:YutoSeta/magic-html-design-core.git",
+                "reference": "62ebafcd5f094319e1ea6cf11da595f18fadf0b4"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/YutoSeta/magic-html-design-core/zipball/62ebafcd5f094319e1ea6cf11da595f18fadf0b4",
+                "reference": "62ebafcd5f094319e1ea6cf11da595f18fadf0b4",
+                "shasum": ""
+            },
+            "require": {
+                "ext-dom": "*",
+                "php": "^8.4"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "YutoSeta\\MagicHtmlDesign\\": "src/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "php -d zend.assertions=1 -d assert.exception=1 tests/smoke.php && php -d zend.assertions=1 -d assert.exception=1 tests/design-marker-smoke.php && php -d zend.assertions=1 -d assert.exception=1 tests/stage-smoke.php"
+                ]
+            },
+            "license": [
+                "proprietary"
+            ],
+            "description": "Finite Design AST validation, typed refinement, semantic binding and deterministic container-query CSS compilation.",
+            "support": {
+                "source": "https://github.com/YutoSeta/magic-html-design-core/tree/v1.4.3",
+                "issues": "https://github.com/YutoSeta/magic-html-design-core/issues"
+            },
+            "time": "2026-09-01T23:54:04+00:00"
+        },
+        {
+            "name": "yutoseta/magic-html-layout-ast",
+            "version": "v1.2.0",
+            "source": {
+                "type": "git",
+                "url": "git@github.com:YutoSeta/magic-html-layout-ast.git",
+                "reference": "9db12223c59e8c2e99286b778c8af188368d4dc6"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/YutoSeta/magic-html-layout-ast/zipball/9db12223c59e8c2e99286b778c8af188368d4dc6",
+                "reference": "9db12223c59e8c2e99286b778c8af188368d4dc6",
+                "shasum": ""
+            },
+            "require": {
+                "php": "^8.4",
+                "yutoseta/magic-html-design-core": "^1.1"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "YutoSeta\\MagicHtmlLayout\\": "src/"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "php -d zend.assertions=1 -d assert.exception=1 tests/smoke.php"
+                ]
+            },
+            "license": [
+                "proprietary"
+            ],
+            "description": "Layout stage AST: greyscale wireframe-level structure, spacing and typographic hierarchy compiled to the mh-layout cascade layer.",
+            "support": {
+                "source": "https://github.com/YutoSeta/magic-html-layout-ast/tree/v1.2.0",
+                "issues": "https://github.com/YutoSeta/magic-html-layout-ast/issues"
+            },
+            "time": "2026-08-30T06:00:44+00:00"
         }
     ],
     "packages-dev": [

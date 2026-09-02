@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use Illuminate\Support\Facades\Http;
 use Tests\Support\WireframeV2Fixture;
 use Tests\TestCase;
+use YutoSeta\MagicHtmlDesign\DesignMarker;
+use YutoSeta\MagicHtmlDesign\Stage\TargetCoverageEvaluator;
 
 final class MaterializeWireframeControllerTest extends TestCase
 {
@@ -260,6 +262,60 @@ final class MaterializeWireframeControllerTest extends TestCase
         $this->assertSame($first->json('files'), $second->json('files'));
         $this->assertSame($first->json('wireframe_decorate_ast'), $second->json('wireframe_decorate_ast'));
         $this->assertSame($first->json('handoff'), $second->json('handoff'));
+    }
+
+    public function test_v11_promotes_the_preview_geometry_to_a_frozen_layout_handoff(): void
+    {
+        Http::preventStrayRequests();
+        $payload = $this->v2Payload();
+        $payload['contract_version'] = '1.1';
+
+        $response = $this->withToken('test-token')
+            ->postJson('/api/v1/wireframes/materialize', $payload)
+            ->assertOk()
+            ->assertJsonPath('contract_version', '1.1')
+            ->assertJsonPath('layout.profile', 'approved-wireframe-layout-v1')
+            ->assertJsonPath('layout.status', 'frozen')
+            ->assertJsonPath('handoff.profile', 'styler-input-v2')
+            ->assertJsonPath('wireframe_skin_ast.preset', 'wireframe-neutral-skin-v1')
+            ->assertJsonPath('wireframe_decor_ast.preset', 'wireframe-structure-decor-v1')
+            ->assertJsonMissingPath('wireframe_decorate_ast')
+            ->assertJsonCount(3, 'layout.pages')
+            ->assertJsonCount(3, 'handoff.approved_layouts');
+
+        $preview = base64_decode($response->json('files.0.content_base64'), true);
+        $handoff = base64_decode($response->json('handoff.files.0.content_base64'), true);
+        $layout = $response->json('handoff.approved_layouts.0');
+        $this->assertIsString($preview);
+        $this->assertIsString($handoff);
+        $this->assertIsArray($layout);
+        $this->assertStringContainsString('data-wireframe-layout="approved-wireframe-layout-v1"', $preview);
+        $this->assertStringContainsString('data-wireframe-presentation="wireframe-skin-decor-v1"', $preview);
+        $this->assertStringContainsString('@layer mh-layout', $layout['css']);
+        $this->assertStringContainsString('@container (max-width: calc(45rem - 0.02px))', $layout['css']);
+        $this->assertStringContainsString('grid-template-columns: 3fr 2fr', $layout['css']);
+        $this->assertStringContainsString('min-height: var(--mh-size-action-min)', $layout['css']);
+        $this->assertStringContainsString('data-mh-design=', $handoff);
+        $this->assertStringNotContainsString('<style', $handoff);
+        $this->assertSame(hash('sha256', trim($handoff)), $layout['source_html_digest']);
+        $this->assertSame(hash('sha256', $layout['css']), $layout['css_digest']);
+        $this->assertSame($response->json('layout.digest'), $response->json('handoff.layout_digest'));
+        $marked = (new DesignMarker)->annotate($handoff, 'page-home.html');
+        $coverage = (new TargetCoverageEvaluator)->evaluate($layout['ast'], $marked['bindings']);
+        $this->assertTrue($coverage['passed'], implode(', ', $coverage['unmatched_rule_ids']));
+        Http::assertNothingSent();
+    }
+
+    public function test_v11_rejects_the_legacy_v1_ast_instead_of_returning_a_layoutless_handoff(): void
+    {
+        $payload = $this->payload();
+        $payload['contract_version'] = '1.1';
+
+        $this->withToken('test-token')
+            ->postJson('/api/v1/wireframes/materialize', $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('contract_version', '1.1')
+            ->assertJsonValidationErrors('wireframe_ast.version');
     }
 
     public function test_v2_rejects_unknown_leaf_fields_and_form_controls_outside_a_form(): void

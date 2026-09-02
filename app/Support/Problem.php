@@ -12,7 +12,7 @@ final class Problem
     public static function response(Request $request, int $status, string $type, string $detail, array $errors = []): JsonResponse
     {
         $body = [
-            'contract_version' => '1.0',
+            'contract_version' => (string) $request->input('contract_version', '1.0'),
             'type' => $type,
             'title' => Response::$statusTexts[$status],
             'status' => $status,
