@@ -335,27 +335,18 @@ PROMPT;
         $id = ['type' => 'string', 'pattern' => '^[a-z0-9][a-z0-9-]*$', 'maxLength' => 100];
         $fieldName = ['type' => 'string', 'pattern' => '^[a-z][a-z0-9_-]*$', 'maxLength' => 100];
 
-        $regionProperties = fn (array $semantics): array => [
+        $regionProperties = fn (array $semanticSchema): array => [
             'type' => ['type' => 'string', 'const' => 'Region'],
             'id' => $id,
-            'semantic' => ['type' => 'string', 'enum' => $semantics],
+            'semantic' => $semanticSchema,
             'layout' => ['type' => 'string', 'enum' => self::layouts()],
             'journey_stage' => ['type' => 'string', 'enum' => ['none', 'attention', 'interest', 'desire', 'memory', 'action']],
             'emphasis' => ['type' => 'string', 'enum' => ['neutral', 'supporting', 'standard', 'strong', 'primary']],
         ];
 
         $definitions = [];
-        $definitions['region'] = $object([...$regionProperties(
-            ['document', 'header', 'navigation', 'main', 'section', 'article', 'aside', 'footer', 'group'],
-        ), 'children' => ['type' => 'array', 'minItems' => 1, 'maxItems' => 40, 'items' => ['$ref' => '#/$defs/node']]], ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
-        $definitions['listRegion'] = $object([...$regionProperties(
-            ['ordered-list', 'unordered-list'],
-        ), 'children' => ['type' => 'array', 'minItems' => 1, 'maxItems' => 20, 'items' => ['$ref' => '#/$defs/listItemRegion']]], ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
-        $definitions['listItemRegion'] = $object([...$regionProperties(
-            ['list-item'],
-        ), 'children' => ['type' => 'array', 'minItems' => 1, 'maxItems' => 12, 'items' => ['$ref' => '#/$defs/node']]], ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
         $definitions['formRegion'] = $object([...$regionProperties(
-            ['form'],
+            ['type' => 'string', 'const' => 'form'],
         ),
             'content' => ['type' => 'array', 'minItems' => 1, 'maxItems' => 8, 'items' => ['$ref' => '#/$defs/formContentNode']],
             'controls' => ['type' => 'array', 'minItems' => 1, 'maxItems' => 12, 'items' => ['$ref' => '#/$defs/formControlNode']],
@@ -433,10 +424,6 @@ PROMPT;
             'value' => $text(100),
             'required' => ['type' => 'boolean'],
         ], ['type', 'id', 'label', 'name', 'value', 'required']);
-        $definitions['node'] = ['anyOf' => array_map(
-            fn (string $name): array => ['$ref' => "#/\$defs/{$name}"],
-            ['region', 'listRegion', 'formRegion', 'text', 'image', 'link', 'button'],
-        )];
         $definitions['formContentNode'] = ['anyOf' => array_map(
             fn (string $name): array => ['$ref' => "#/\$defs/{$name}"],
             ['text', 'image', 'link', 'button'],
@@ -445,6 +432,93 @@ PROMPT;
             fn (string $name): array => ['$ref' => "#/\$defs/{$name}"],
             ['input', 'textarea', 'select', 'checkbox'],
         )];
+
+        $leafReferences = array_map(
+            fn (string $name): array => ['$ref' => "#/\$defs/{$name}"],
+            ['text', 'image', 'link', 'button'],
+        );
+        $definitions['node5'] = ['anyOf' => $leafReferences];
+        $branchingSemantics = ['navigation', 'article', 'aside', 'group'];
+        $childLimits = [2 => 24, 3 => 16, 4 => 12];
+        for ($depth = 4; $depth >= 2; $depth--) {
+            $nextDepth = $depth + 1;
+            $definitions["region{$depth}"] = $object([
+                ...$regionProperties(['type' => 'string', 'enum' => $branchingSemantics]),
+                'children' => [
+                    'type' => 'array',
+                    'minItems' => 1,
+                    'maxItems' => $childLimits[$depth],
+                    'items' => ['$ref' => "#/\$defs/node{$nextDepth}"],
+                ],
+            ], ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
+            $definitions["listItemRegion{$depth}"] = $object([
+                ...$regionProperties(['type' => 'string', 'const' => 'list-item']),
+                'children' => [
+                    'type' => 'array',
+                    'minItems' => 1,
+                    'maxItems' => 12,
+                    'items' => ['$ref' => "#/\$defs/node{$nextDepth}"],
+                ],
+            ], ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
+            $definitions["listRegion{$depth}"] = $object([
+                ...$regionProperties(['type' => 'string', 'enum' => ['ordered-list', 'unordered-list']]),
+                'children' => [
+                    'type' => 'array',
+                    'minItems' => 1,
+                    'maxItems' => 20,
+                    'items' => ['$ref' => "#/\$defs/listItemRegion{$depth}"],
+                ],
+            ], ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
+            $definitions["node{$depth}"] = ['anyOf' => [
+                ['$ref' => "#/\$defs/region{$depth}"],
+                ['$ref' => "#/\$defs/listRegion{$depth}"],
+                ['$ref' => '#/$defs/formRegion'],
+                ...$leafReferences,
+            ]];
+        }
+        $definitions['sectionRegion2'] = $object([
+            ...$regionProperties(['type' => 'string', 'const' => 'section']),
+            'children' => [
+                'type' => 'array',
+                'minItems' => 1,
+                'maxItems' => 24,
+                'items' => ['$ref' => '#/$defs/node3'],
+            ],
+        ], ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
+        foreach (['header', 'footer'] as $semantic) {
+            $definitions["{$semantic}Region1"] = $object([
+                ...$regionProperties(['type' => 'string', 'const' => $semantic]),
+                'children' => [
+                    'type' => 'array',
+                    'minItems' => 1,
+                    'maxItems' => 12,
+                    'items' => ['$ref' => '#/$defs/node2'],
+                ],
+            ], ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
+        }
+        $definitions['mainRegion1'] = $object([
+            ...$regionProperties(['type' => 'string', 'const' => 'main']),
+            'children' => [
+                'type' => 'array',
+                'minItems' => 2,
+                'maxItems' => 12,
+                'items' => ['$ref' => '#/$defs/sectionRegion2'],
+            ],
+        ], ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
+        $definitions['node1'] = ['anyOf' => [
+            ['$ref' => '#/$defs/headerRegion1'],
+            ['$ref' => '#/$defs/mainRegion1'],
+            ['$ref' => '#/$defs/footerRegion1'],
+        ]];
+        $definitions['region0'] = $object([
+            ...$regionProperties(['type' => 'string', 'const' => 'document']),
+            'children' => [
+                'type' => 'array',
+                'minItems' => 1,
+                'maxItems' => 3,
+                'items' => ['$ref' => '#/$defs/node1'],
+            ],
+        ], ['type', 'id', 'semantic', 'layout', 'journey_stage', 'emphasis', 'children']);
 
         return [
             ...$object([
@@ -458,7 +532,7 @@ PROMPT;
                     'key' => $text(100),
                     'path' => $text(200),
                     'title' => $text(200),
-                    'root' => ['$ref' => '#/$defs/region'],
+                    'root' => ['$ref' => '#/$defs/region0'],
                 ], ['key', 'path', 'title', 'root']),
             ],
         ];

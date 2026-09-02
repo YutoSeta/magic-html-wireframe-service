@@ -174,7 +174,7 @@ final class WireframeValidator
             $this->assert($state['section_count'] >= 2 && $state['section_count'] <= 12, 'Every page must contain 2 to 12 section Regions.');
             $this->assert($state['main_section_count'] === $state['section_count'], 'Every section Region must be a direct child of main.');
             $totalNodeCount += $state['node_count'];
-            $this->assert($totalNodeCount <= 800, 'Wireframe AST v2 may not contain more than 800 nodes in total.');
+            $this->assert($totalNodeCount <= 400, 'Wireframe AST v2 may not contain more than 400 nodes in total.');
             foreach ($state['anchors'] as $anchor) {
                 $this->assert(isset($state['ids'][$anchor]), "The local anchor #{$anchor} does not resolve to a node.");
             }
@@ -200,9 +200,9 @@ final class WireframeValidator
      */
     private function node(array $node, ?string $parentSemantic, int $depth, bool $insideForm, bool $insideMain, array &$state): array
     {
-        $this->assert($depth <= 8, 'Wireframe nodes may not exceed a depth of 8.');
+        $this->assert($depth <= 5, 'Wireframe nodes may not exceed a depth of 5.');
         $state['node_count']++;
-        $this->assert($state['node_count'] <= 300, 'A wireframe page may not contain more than 300 nodes.');
+        $this->assert($state['node_count'] <= 150, 'A wireframe page may not contain more than 150 nodes.');
         $type = $this->text($node['type'] ?? null, 30, 'Node type');
         $this->assert($type === 'Region' || in_array($type, self::LEAF_TYPES, true), 'A wireframe contains an unsupported node type.');
         $id = $this->nodeId($node['id'] ?? null);
@@ -217,7 +217,7 @@ final class WireframeValidator
             $journeyStage = $this->enum($node['journey_stage'] ?? null, self::JOURNEY_STAGES, 'Journey stage');
             $emphasis = $this->enum($node['emphasis'] ?? null, self::EMPHASES, 'Region emphasis');
             $children = $node['children'] ?? null;
-            $this->assert(is_array($children) && array_is_list($children) && $children !== [] && count($children) <= 40, 'Every Region must contain 1 to 40 child nodes.');
+            $this->assert(is_array($children) && array_is_list($children) && $children !== [] && count($children) <= $this->maximumChildren($semantic), 'The Region contains an unsupported number of child nodes.');
             $this->assert($depth === 0 || $semantic !== 'document', 'A document Region may only be the page root.');
             if (in_array($semantic, ['header', 'main', 'footer'], true)) {
                 $this->assert($parentSemantic === 'document', 'Header, main and footer Regions must be direct children of document.');
@@ -284,6 +284,17 @@ final class WireframeValidator
             'Textarea' => $this->simpleControlNode($node, $id, 'Textarea'),
             'Select' => $this->selectNode($node, $id),
             'Checkbox' => $this->checkboxNode($node, $id),
+        };
+    }
+
+    private function maximumChildren(string $semantic): int
+    {
+        return match ($semantic) {
+            'document' => 3,
+            'main' => 12,
+            'form' => 21,
+            'ordered-list', 'unordered-list' => 20,
+            default => 24,
         };
     }
 

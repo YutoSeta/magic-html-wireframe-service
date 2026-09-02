@@ -339,6 +339,55 @@ final class WireframeControllerTest extends TestCase
         ], $this->payload()['site_ast']);
     }
 
+    public function test_v2_validator_rejects_nodes_beyond_the_finite_provider_depth(): void
+    {
+        $wireframe = WireframeV2Fixture::document();
+        $wireframe['pages'][0]['root']['children'][1]['children'][0]['children'][] = WireframeV2Fixture::region(
+            'deep-group-three',
+            'group',
+            'stack',
+            'none',
+            'neutral',
+            [WireframeV2Fixture::region(
+                'deep-group-four',
+                'group',
+                'stack',
+                'none',
+                'neutral',
+                [WireframeV2Fixture::region(
+                    'deep-group-five',
+                    'group',
+                    'stack',
+                    'none',
+                    'neutral',
+                    [WireframeV2Fixture::text('deep-body', 'body', '深すぎる本文')],
+                )],
+            )],
+        );
+
+        $this->expectException(InvalidWireframeException::class);
+        $this->expectExceptionMessage('Wireframe nodes may not exceed a depth of 5.');
+
+        app(WireframeValidator::class)->validate($wireframe, WireframeV2Fixture::siteAst(), 2, 'ja');
+    }
+
+    public function test_v2_validator_rejects_semantic_child_budget_overflow(): void
+    {
+        $wireframe = WireframeV2Fixture::document();
+        for ($index = 0; $index < 23; $index++) {
+            $wireframe['pages'][0]['root']['children'][1]['children'][1]['children'][] = WireframeV2Fixture::text(
+                "overflow-body-{$index}",
+                'body',
+                "本文 {$index}",
+            );
+        }
+
+        $this->expectException(InvalidWireframeException::class);
+        $this->expectExceptionMessage('The Region contains an unsupported number of child nodes.');
+
+        app(WireframeValidator::class)->validate($wireframe, WireframeV2Fixture::siteAst(), 2, 'ja');
+    }
+
     /** @return array<string,mixed> */
     private function payload(): array
     {

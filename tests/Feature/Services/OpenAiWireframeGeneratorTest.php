@@ -179,7 +179,7 @@ final class OpenAiWireframeGeneratorTest extends TestCase
         Http::assertSentCount(1);
     }
 
-    public function test_v2_requests_a_recursive_content_bearing_ast_without_provider_owned_decoration(): void
+    public function test_v2_requests_a_finite_content_bearing_ast_without_provider_owned_decoration(): void
     {
         Http::preventStrayRequests();
         Http::fake([
@@ -213,16 +213,25 @@ final class OpenAiWireframeGeneratorTest extends TestCase
                 && ($schema['properties']['version']['type'] ?? null) === 'integer'
                 && ($schema['properties']['version']['const'] ?? null) === 2
                 && ($schema['properties']['pages']['maxItems'] ?? null) === 8
-                && ($schema['$defs']['region']['properties']['type']['type'] ?? null) === 'string'
-                && ($schema['$defs']['region']['properties']['type']['const'] ?? null) === 'Region'
+                && ($schema['$defs']['region0']['properties']['type']['type'] ?? null) === 'string'
+                && ($schema['$defs']['region0']['properties']['type']['const'] ?? null) === 'Region'
+                && ($schema['$defs']['region0']['properties']['semantic']['const'] ?? null) === 'document'
                 && ($schema['$defs']['checkbox']['properties']['type']['type'] ?? null) === 'string'
-                && ($schema['$defs']['region']['properties']['children']['items']['$ref'] ?? null) === '#/$defs/node'
-                && ($schema['$defs']['listRegion']['properties']['children']['items']['$ref'] ?? null) === '#/$defs/listItemRegion'
+                && ($schema['$defs']['page']['properties']['root']['$ref'] ?? null) === '#/$defs/region0'
+                && ($schema['$defs']['region0']['properties']['children']['items']['$ref'] ?? null) === '#/$defs/node1'
+                && ($schema['$defs']['mainRegion1']['properties']['children']['items']['$ref'] ?? null) === '#/$defs/sectionRegion2'
+                && ($schema['$defs']['sectionRegion2']['properties']['children']['items']['$ref'] ?? null) === '#/$defs/node3'
+                && ($schema['$defs']['region4']['properties']['children']['items']['$ref'] ?? null) === '#/$defs/node5'
+                && ($schema['$defs']['listRegion4']['properties']['children']['items']['$ref'] ?? null) === '#/$defs/listItemRegion4'
+                && ($schema['$defs']['listItemRegion4']['properties']['children']['items']['$ref'] ?? null) === '#/$defs/node5'
                 && ($schema['$defs']['formRegion']['properties']['controls']['items']['$ref'] ?? null) === '#/$defs/formControlNode'
                 && ($schema['$defs']['formRegion']['properties']['submit']['$ref'] ?? null) === '#/$defs/submitButton'
                 && ($schema['$defs']['submitButton']['properties']['button_type']['const'] ?? null) === 'submit'
                 && ($schema['$defs']['button']['properties']['button_type']['const'] ?? null) === 'button'
-                && count($schema['$defs']['node']['anyOf'] ?? []) === 7
+                && ! isset($schema['$defs']['node'], $schema['$defs']['region'], $schema['$defs']['listRegion'])
+                && count($schema['$defs']['node1']['anyOf'] ?? []) === 3
+                && count($schema['$defs']['node2']['anyOf'] ?? []) === 7
+                && count($schema['$defs']['node5']['anyOf'] ?? []) === 4
                 && count($schema['$defs']['formControlNode']['anyOf'] ?? []) === 4
                 && ($body['max_output_tokens'] ?? null) === 64000
                 && ! str_contains(json_encode($body, JSON_THROW_ON_ERROR), 'wireframe-neutral-v1');

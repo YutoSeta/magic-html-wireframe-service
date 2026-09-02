@@ -15,7 +15,7 @@ The default v1 output describes page sections by stable keys, composition types,
 
 Every Site AST page appears exactly once in `wireframe_ast`. v1 pages contain 2–8 sections and use the finite composition and role vocabularies enforced by the validator.
 
-Wireframe AST v2 preserves the Site AST page key, path, and title, then models the page as a finite semantic tree. It carries real locale copy so that information hierarchy, AIDMA order, forms, media placement, and conversion paths can be reviewed without applying a brand skin. It enforces one `heading-1`, 2–12 direct `main` sections, unique node IDs, a depth limit of 8, a 300-node page limit, an 800-node request limit, safe local links, list ancestry, non-nested forms, and form-control ancestry. A request contains at most eight pages, starts with `home` at `/`, and uses unique canonical page paths. Generic `Item` and `Action` leaves are not part of v2.
+Wireframe AST v2 preserves the Site AST page key, path, and title, then models the page as a finite semantic tree. It carries real locale copy so that information hierarchy, AIDMA order, forms, media placement, and conversion paths can be reviewed without applying a brand skin. Provider structured output uses finite level-specific Region definitions rather than a recursive node definition. The validator enforces one `heading-1`, 2–12 direct `main` sections, unique node IDs, a depth limit of 5, a 150-node page limit, a 400-node request limit, semantic child budgets, safe local links, list ancestry, non-nested forms, and form-control ancestry. A request contains at most eight pages, starts with `home` at `/`, and uses unique canonical page paths. Generic `Item` and `Action` leaves are not part of v2.
 
 ```json
 {
