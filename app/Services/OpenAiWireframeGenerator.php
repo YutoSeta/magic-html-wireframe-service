@@ -490,18 +490,31 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
             throw new InvalidWireframeException('The whole-site review is invalid.');
         }
         $wireframe = $assembled;
+        $appliedOperations = 0;
+        $skippedOperations = 0;
         foreach ($review['operations'] as $operation) {
             if (! is_array($operation)) {
-                throw new InvalidWireframeException('The whole-site review contains an invalid operation.');
+                $skippedOperations++;
+
+                continue;
             }
-            $wireframe = $this->applyReviewOperation($wireframe, $operation);
+            try {
+                $wireframe = $this->applyReviewOperation($wireframe, $operation);
+                $appliedOperations++;
+            } catch (InvalidWireframeException) {
+                $skippedOperations++;
+            }
         }
         $wireframe = $this->normalizeProviderDocument($wireframe, 2);
         $wireframe = $this->validator->validate($wireframe, $siteAst, 2, $locale);
 
         return [
             'wireframe' => $wireframe,
-            'review' => ['finding_count' => count($review['findings']), 'operation_count' => count($review['operations'])],
+            'review' => [
+                'finding_count' => count($review['findings']),
+                'operation_count' => $appliedOperations,
+                'skipped_operation_count' => $skippedOperations,
+            ],
         ];
     }
 

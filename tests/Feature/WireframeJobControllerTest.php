@@ -405,6 +405,9 @@ final class WireframeJobControllerTest extends TestCase
                     ], [
                         'op' => 'reorder_sections', 'page_key' => 'home',
                         'section_ids' => ['hero-section', 'contact-section'],
+                    ], [
+                        'op' => 'replace_copy', 'page_key' => 'home', 'node_id' => 'hero-section',
+                        'property' => 'content', 'value' => 'Regionへは適用できないため棄却される操作',
                     ]],
                 ]),
             ),
@@ -436,6 +439,7 @@ final class WireframeJobControllerTest extends TestCase
             ->assertJsonPath('result.generation.section_count', 2)
             ->assertJsonPath('result.generation.review_finding_count', 1)
             ->assertJsonPath('result.generation.review_operation_count', 2)
+            ->assertJsonPath('result.generation.review_skipped_operation_count', 1)
             ->assertJsonPath('result.telemetry.provider_request_count', 4)
             ->assertJsonPath('result.telemetry.semantic_attempt_count', 4)
             ->assertJsonPath('result.telemetry.input_tokens', 400)

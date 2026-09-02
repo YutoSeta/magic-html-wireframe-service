@@ -329,6 +329,7 @@ final class SectionParallelWireframeWorkflow
                     'section_count' => count($workflow['section_tasks']),
                     'review_finding_count' => $reviewed['review']['finding_count'],
                     'review_operation_count' => $reviewed['review']['operation_count'],
+                    'review_skipped_operation_count' => $reviewed['review']['skipped_operation_count'],
                 ],
             ],
         ];
