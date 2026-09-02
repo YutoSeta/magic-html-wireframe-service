@@ -546,6 +546,59 @@ final class WireframeJobControllerTest extends TestCase
         $this->assertSame('価値提案と資料請求への導入', data_get($section, 'children.3.alt'));
     }
 
+    public function test_section_parallel_mode_retries_only_a_terminal_provider_section_once(): void
+    {
+        Http::fake([
+            'https://api.openai.test/v1/responses' => Http::sequence()
+                ->push(['id' => 'resp_plan_provider_retry', 'status' => 'queued'])
+                ->push(['id' => 'resp_section_hero_limited', 'status' => 'queued'])
+                ->push(['id' => 'resp_section_contact_provider_valid', 'status' => 'queued'])
+                ->push(['id' => 'resp_section_hero_provider_repaired', 'status' => 'queued'])
+                ->push(['id' => 'resp_review_provider_retry', 'status' => 'queued']),
+            'https://api.openai.test/v1/responses/resp_plan_provider_retry' => Http::response(
+                $this->structuredProviderResponse('resp_plan_provider_retry', $this->sectionPlan()),
+            ),
+            'https://api.openai.test/v1/responses/resp_section_hero_limited' => Http::response(
+                $this->outputLimitProviderResponse('resp_section_hero_limited'),
+            ),
+            'https://api.openai.test/v1/responses/resp_section_contact_provider_valid' => Http::response(
+                $this->structuredProviderResponse('resp_section_contact_provider_valid', $this->contactSection()),
+            ),
+            'https://api.openai.test/v1/responses/resp_section_hero_provider_repaired' => Http::response(
+                $this->structuredProviderResponse('resp_section_hero_provider_repaired', $this->heroSection()),
+            ),
+            'https://api.openai.test/v1/responses/resp_review_provider_retry' => Http::response(
+                $this->structuredProviderResponse('resp_review_provider_retry', ['version' => 1, 'findings' => [], 'operations' => []]),
+            ),
+        ]);
+        $started = $this->withToken('test-token')
+            ->withHeader('Idempotency-Key', 'section-parallel-provider-retry-0001')
+            ->postJson('/api/v1/wireframe-jobs', $this->sectionParallelPayload())
+            ->assertAccepted();
+        $path = '/api/v1/wireframe-jobs/'.$started->json('id');
+
+        $this->withToken('test-token')->getJson($path)->assertOk()->assertJsonPath('stage', 'sections');
+        $this->withToken('test-token')->getJson($path)->assertOk()->assertJsonPath('stage', 'sections');
+        $this->withToken('test-token')->getJson($path)->assertOk()->assertJsonPath('stage', 'sections');
+        $this->withToken('test-token')->getJson($path)->assertOk()->assertJsonPath('stage', 'review');
+        $this->withToken('test-token')->getJson($path)
+            ->assertOk()
+            ->assertJsonPath('status', 'succeeded')
+            ->assertJsonPath('result.telemetry.provider_request_count', 5)
+            ->assertJsonPath('result.telemetry.input_tokens', 2488)
+            ->assertJsonPath('result.telemetry.output_tokens', 64200);
+
+        Http::assertSent(function ($request): bool {
+            if ($request->url() !== 'https://api.openai.test/v1/responses' || $request->method() !== 'POST') {
+                return false;
+            }
+            $input = json_decode((string) $request['input'], true);
+
+            return str_contains((string) ($input['validation_feedback'] ?? ''), 'exhausted the output-token limit');
+        });
+        Http::assertSentCount(10);
+    }
+
     /** @return array<string,mixed> */
     private function payload(): array
     {

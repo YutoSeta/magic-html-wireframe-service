@@ -129,6 +129,29 @@ final class SectionParallelWireframeWorkflow
                 continue;
             }
             if (($response['status'] ?? null) !== 'completed') {
+                if ((int) ($task['semantic_attempt'] ?? 1) < 2) {
+                    $telemetry[] = $this->generator->backgroundTelemetry($response);
+                    $feedback = $this->generator->outputLimitRetryFeedback($response)
+                        ?? sprintf(
+                            'The provider reached terminal status [%s] without a valid section. Return one concise schema-valid section.',
+                            (string) ($response['status'] ?? 'unknown'),
+                        );
+                    $retry = $this->generator->startSectionBackground(
+                        $payload['site_ast'],
+                        $payload['brief'],
+                        (string) $payload['locale'],
+                        $workflow['plan'],
+                        $task['page_plan'],
+                        $task['section_plan'],
+                        (string) $payload['execution_profile'],
+                        $feedback,
+                    );
+                    $tasks[$key]['response_id'] = $retry['id'];
+                    $tasks[$key]['provider_status'] = $retry['status'];
+                    $tasks[$key]['semantic_attempt'] = 2;
+
+                    continue;
+                }
                 $workflow['section_tasks'] = $tasks;
 
                 return $this->beginSectionDrain(
@@ -136,7 +159,11 @@ final class SectionParallelWireframeWorkflow
                     $key,
                     $response,
                     'wireframe_section_failed',
-                    'A bounded wireframe section could not be generated.',
+                    sprintf(
+                        'Section [%s] reached terminal provider status [%s] after one bounded retry.',
+                        $key,
+                        (string) ($response['status'] ?? 'unknown'),
+                    ),
                 );
             }
             try {
