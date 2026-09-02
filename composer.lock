@@ -6166,16 +6166,16 @@
         },
         {
             "name": "yutoseta/magic-html-layout-ast",
-            "version": "v1.3.1",
+            "version": "v1.3.2",
             "source": {
                 "type": "git",
                 "url": "git@github.com:YutoSeta/magic-html-layout-ast.git",
-                "reference": "9bce6e86ff07b18e96f45d88d2e024073753a8bf"
+                "reference": "e8b7fb6cdbbcdce5ca014fe277de2f3ad2b750ba"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/YutoSeta/magic-html-layout-ast/zipball/9bce6e86ff07b18e96f45d88d2e024073753a8bf",
-                "reference": "9bce6e86ff07b18e96f45d88d2e024073753a8bf",
+                "url": "https://api.github.com/repos/YutoSeta/magic-html-layout-ast/zipball/e8b7fb6cdbbcdce5ca014fe277de2f3ad2b750ba",
+                "reference": "e8b7fb6cdbbcdce5ca014fe277de2f3ad2b750ba",
                 "shasum": ""
             },
             "require": {
@@ -6200,10 +6200,10 @@
             ],
             "description": "Canonical geometry-only Layout AST and immutable Layout Snapshot compiled to the mh-layout cascade layer.",
             "support": {
-                "source": "https://github.com/YutoSeta/magic-html-layout-ast/tree/v1.3.1",
+                "source": "https://github.com/YutoSeta/magic-html-layout-ast/tree/v1.3.2",
                 "issues": "https://github.com/YutoSeta/magic-html-layout-ast/issues"
             },
-            "time": "2026-09-02T22:34:30+00:00"
+            "time": "2026-09-02T22:56:13+00:00"
         }
     ],
     "packages-dev": [
