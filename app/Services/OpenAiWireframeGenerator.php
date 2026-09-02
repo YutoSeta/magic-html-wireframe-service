@@ -489,7 +489,8 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
             || ! is_array($review['operations'] ?? null)) {
             throw new InvalidWireframeException('The whole-site review is invalid.');
         }
-        $wireframe = $assembled;
+        $wireframe = $this->normalizeProviderDocument($assembled, 2);
+        $wireframe = $this->validator->validate($wireframe, $siteAst, 2, $locale);
         $appliedOperations = 0;
         $skippedOperations = 0;
         foreach ($review['operations'] as $operation) {
@@ -499,7 +500,9 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
                 continue;
             }
             try {
-                $wireframe = $this->applyReviewOperation($wireframe, $operation);
+                $candidate = $this->applyReviewOperation($wireframe, $operation);
+                $candidate = $this->validator->validate($candidate, $siteAst, 2, $locale);
+                $wireframe = $candidate;
                 $appliedOperations++;
             } catch (InvalidWireframeException) {
                 $skippedOperations++;
@@ -1156,7 +1159,10 @@ PROMPT;
         $ids = [];
         $collectIds = function (array $node) use (&$collectIds, &$ids): void {
             if (is_string($node['id'] ?? null)) {
-                $ids[$node['id']] = true;
+                $ids[$node['id']] = [
+                    'type' => $node['type'] ?? null,
+                    'semantic' => $node['semantic'] ?? null,
+                ];
             }
             foreach ($node['children'] ?? [] as $child) {
                 if (is_array($child)) {
@@ -1168,13 +1174,15 @@ PROMPT;
 
         $rewrite = function (array $node) use (&$rewrite, $ids): array {
             $href = $node['href'] ?? null;
-            if (($node['type'] ?? null) === 'Link'
-                && is_string($href)
-                && preg_match('/\A#([a-z0-9][a-z0-9-]*)\z/D', $href, $matches) === 1
-                && ! isset($ids[$matches[1]])) {
-                $candidate = $this->unambiguousAnchorCandidate($matches[1], $ids);
-                if ($candidate !== null) {
-                    $node['href'] = "#{$candidate}";
+            if (($node['type'] ?? null) === 'Link' && is_string($href) && str_starts_with($href, '#')) {
+                $fragment = substr($href, 1);
+                $candidate = preg_match('/\A[a-z0-9][a-z0-9-]*\z/D', $fragment) === 1
+                    ? $fragment
+                    : null;
+                if ($candidate === null || ! isset($ids[$candidate])) {
+                    $candidate = $candidate === null ? null : $this->unambiguousAnchorCandidate($candidate, $ids);
+                    $candidate ??= $this->fallbackActionAnchor($ids);
+                    $node['href'] = $candidate === null ? '/' : "#{$candidate}";
                 }
             }
             foreach ($node['children'] ?? [] as $index => $child) {
@@ -1189,7 +1197,22 @@ PROMPT;
         return $rewrite($root);
     }
 
-    /** @param array<string,bool> $ids */
+    /** @param array<string,array{type:mixed,semantic:mixed}> $ids */
+    private function fallbackActionAnchor(array $ids): ?string
+    {
+        foreach ($ids as $id => $identity) {
+            $tokens = explode('-', $id);
+            if (($identity['type'] ?? null) === 'Region'
+                && (($identity['semantic'] ?? null) === 'form'
+                    || array_intersect($tokens, ['contact', 'form', 'request', 'consultation', 'inquiry', 'apply', 'download', 'action']) !== [])) {
+                return $id;
+            }
+        }
+
+        return null;
+    }
+
+    /** @param array<string,mixed> $ids */
     private function unambiguousAnchorCandidate(string $anchor, array $ids): ?string
     {
         $section = "{$anchor}-section";

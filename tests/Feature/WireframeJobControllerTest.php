@@ -377,6 +377,8 @@ final class WireframeJobControllerTest extends TestCase
     public function test_section_parallel_mode_plans_generates_sections_in_parallel_and_applies_whole_site_review(): void
     {
         config()->set('wireframe.jobs.section_start_batch', 6);
+        $heroSection = $this->heroSection();
+        $heroSection['section']['children'][3]['href'] = '#資料請求';
         Http::fake([
             'https://api.openai.test/v1/responses' => Http::sequence()
                 ->push(['id' => 'resp_plan', 'status' => 'queued'])
@@ -387,7 +389,7 @@ final class WireframeJobControllerTest extends TestCase
                 $this->structuredProviderResponse('resp_plan', $this->sectionPlan()),
             ),
             'https://api.openai.test/v1/responses/resp_section_hero' => Http::response(
-                $this->structuredProviderResponse('resp_section_hero', $this->heroSection()),
+                $this->structuredProviderResponse('resp_section_hero', $heroSection),
             ),
             'https://api.openai.test/v1/responses/resp_section_contact' => Http::response(
                 $this->structuredProviderResponse('resp_section_contact', $this->contactSection()),
@@ -408,6 +410,9 @@ final class WireframeJobControllerTest extends TestCase
                     ], [
                         'op' => 'replace_copy', 'page_key' => 'home', 'node_id' => 'hero-section',
                         'property' => 'content', 'value' => 'Regionへは適用できないため棄却される操作',
+                    ], [
+                        'op' => 'replace_href', 'page_key' => 'home', 'node_id' => 'hero-contact-link',
+                        'href' => '#資料請求',
                     ]],
                 ]),
             ),
@@ -435,11 +440,12 @@ final class WireframeJobControllerTest extends TestCase
             ->assertJsonPath('result.wireframe_ast.pages.0.root.children.1.children.0.id', 'hero-section')
             ->assertJsonPath('result.wireframe_ast.pages.0.root.children.1.children.1.id', 'contact-section')
             ->assertJsonPath('result.wireframe_ast.pages.0.root.children.1.children.0.children.1.content', '導入判断に必要な機能・費用・進め方を一冊で確認できます。')
+            ->assertJsonPath('result.wireframe_ast.pages.0.root.children.1.children.0.children.3.href', '#contact-section')
             ->assertJsonPath('result.generation.mode', 'section_parallel')
             ->assertJsonPath('result.generation.section_count', 2)
             ->assertJsonPath('result.generation.review_finding_count', 1)
             ->assertJsonPath('result.generation.review_operation_count', 2)
-            ->assertJsonPath('result.generation.review_skipped_operation_count', 1)
+            ->assertJsonPath('result.generation.review_skipped_operation_count', 2)
             ->assertJsonPath('result.telemetry.provider_request_count', 4)
             ->assertJsonPath('result.telemetry.semantic_attempt_count', 4)
             ->assertJsonPath('result.telemetry.input_tokens', 400)
