@@ -548,6 +548,7 @@ final class WireframeJobControllerTest extends TestCase
         $this->assertSame('Image', data_get($section, 'children.3.type'));
         $this->assertSame('hero-section-image', data_get($section, 'children.3.id'));
         $this->assertSame('価値提案と資料請求への導入', data_get($section, 'children.3.alt'));
+        $this->assertSame(['type', 'id', 'alt', 'caption', 'aspect'], array_keys($section['children'][3]));
     }
 
     public function test_section_completion_normalizes_text_with_image_identity_to_image_leaf(): void
@@ -567,8 +568,8 @@ final class WireframeJobControllerTest extends TestCase
         );
 
         $this->assertSame('Image', data_get($section, 'children.2.type'));
-        $this->assertSame('導入後の業務フローを示す画面イメージ', data_get($section, 'children.2.intent'));
         $this->assertSame('導入後の業務フローを示す画面イメージ', data_get($section, 'children.2.alt'));
+        $this->assertSame(['type', 'id', 'alt', 'caption', 'aspect'], array_keys($section['children'][2]));
     }
 
     public function test_section_completion_deterministically_supplies_a_planned_missing_form(): void

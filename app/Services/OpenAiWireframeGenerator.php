@@ -345,9 +345,9 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
             $section['children'][] = [
                 'type' => 'Image',
                 'id' => (string) $sectionPlan['id'].'-image',
-                'intent' => $purpose.'を視覚的に補足する画像',
                 'alt' => $purpose,
-                'aspect_ratio' => '16:9',
+                'caption' => null,
+                'aspect' => '16:9',
             ];
             $facts['image'] = 1;
             $facts['nodes']++;
@@ -1124,9 +1124,9 @@ PROMPT;
             return [
                 'type' => 'Image',
                 'id' => $id,
-                'intent' => $content,
                 'alt' => $content,
-                'aspect_ratio' => '16:9',
+                'caption' => null,
+                'aspect' => '16:9',
             ];
         }
         if (($node['type'] ?? null) !== 'Region') {
