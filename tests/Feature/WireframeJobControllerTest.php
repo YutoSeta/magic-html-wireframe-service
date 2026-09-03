@@ -462,6 +462,7 @@ final class WireframeJobControllerTest extends TestCase
 
             return ($request['metadata']['stage'] ?? null) === 'wireframe_review'
                 && str_contains((string) $request['instructions'], 'never regenerate the whole AST')
+                && ($request['max_output_tokens'] ?? null) === 16000
                 && ($request['text']['format']['schema']['properties']['operations']['maxItems'] ?? null) === 40;
         });
         Http::assertSentCount(8);

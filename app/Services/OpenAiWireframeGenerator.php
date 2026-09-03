@@ -534,7 +534,7 @@ final class OpenAiWireframeGenerator implements ReportsWireframeTelemetry, Wiref
             ['site_ast' => $siteAst, 'brief' => $brief, 'locale' => $locale, 'assembled_wireframe_ast' => $assembled],
             $executionProfile,
             'wireframe_review',
-            8000,
+            16000,
         );
     }
 
